@@ -22,9 +22,31 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: default
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Task
+        run: pip install go-task-bin
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Build, Stage, and Package Outputs
+        run: task test
+
   build:
     runs-on: macos-latest
     environment: default
+    needs: test
     defaults:
       run:
         shell: bash

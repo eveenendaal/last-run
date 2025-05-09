@@ -22,14 +22,17 @@ tasks:
     run: once
     cmds:
       - mkdir -p bin
-  build:
-    desc: Build Desktop Logger
-    sources:
-      - main.go
-      - go.mod
+  test:
+    desc: Run tests
     deps:
       - prep
     cmds:
       - go vet
+  build:
+    desc: Build Desktop Logger
+    deps:
+      - prep
+      - test
+    cmds:
       - go build -o {{.app_bin}}
       - shasum -a 256 {{.app_bin}} > {{.app_bin}}.sha256
