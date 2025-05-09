@@ -28,5 +28,5 @@ jobs:
           go-version: 'stable'
           cache: true
 
-      - name: Build, Stage, and Package Outputs
+      - name: Build App
         run: task build
