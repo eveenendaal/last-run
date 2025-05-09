@@ -1,0 +1,33 @@
+name: App Test
+
+on:
+  push:
+    pull_request:
+      branches:
+        - 'master'
+    paths:
+      - 'Taskfile.yml'
+      - '**/*.go'
+      - '.github/workflows/builder.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: default
+    defaults:
+      run:
+        shell: bash
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Task
+        run: pip install go-task-bin
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Build, Stage, and Package Outputs
+        run: task build
