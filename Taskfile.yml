@@ -1,0 +1,35 @@
+version: '3'
+
+vars:
+  app_name: Last Run
+  app_version: 1.0.0
+  app_bin: bin/lastrun
+
+tasks:
+  clean:
+    desc: Clean the output directory
+    cmds:
+      - rm -rf bin
+  archive.releases:
+    desc: Archive the releases
+    cmds:
+      - |
+        for i in $(gh release list --json tagName -q .[].tagName | tail -n +4); do
+          gh release delete "$i" -y;
+        done
+  prep:
+    desc: Prepare the build environment
+    run: once
+    cmds:
+      - mkdir -p bin
+  build:
+    desc: Build Desktop Logger
+    sources:
+      - main.go
+      - go.mod
+    deps:
+      - prep
+    cmds:
+      - go vet
+      - go build -o {{.app_bin}}
+      - shasum -a 256 {{.app_bin}} > {{.app_bin}}.sha256
