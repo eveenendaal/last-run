@@ -9,7 +9,7 @@ tasks:
     desc: Archive the releases
     cmds:
       - |
-        for i in $(gh release list --json tagName -q .[].tagName | tail -n +4); do
+        for i in $(gh release list --json tagName -q .[].tagName | tail -n +2); do
           gh release delete "$i" -y;
         done
   test:
