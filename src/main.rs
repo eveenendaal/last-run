@@ -1,10 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use clap::{Parser, Subcommand};
 use dirs::home_dir;
-use rusqlite::{Connection, Result as SqliteResult};
-use std::fmt;
+use rusqlite::Connection;
 use std::fs;
-use std::path::PathBuf;
 use std::process;
 use thiserror::Error;
 
@@ -29,7 +27,7 @@ enum AppError {
     HomeDirectoryNotFound,
 }
 
-type AppResult<T> = std::result::Result<T, AppError>;
+type AppResult<T> = Result<T, AppError>;
 
 struct Task {
     id: String,
@@ -45,7 +43,7 @@ impl Task {
     }
 
     fn update(&self, conn: &Connection) -> AppResult<()> {
-        let existing = self.select(conn)?;
+        self.select(conn)?;
         
         conn.execute(
             "UPDATE tasks SET last_run = ? WHERE id = ?",
