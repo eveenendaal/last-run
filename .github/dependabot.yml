@@ -14,7 +14,7 @@ updates:
       day: saturday
       time: "02:00"
       timezone: "Europe/Amsterdam"
-  - package-ecosystem: "gomod"
+  - package-ecosystem: "cargo"
     directory: "/"
     assignees:
       - "eveenendaal"
