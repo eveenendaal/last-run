@@ -18,44 +18,26 @@ Last Run helps you manage recurring tasks by tracking when they were last execut
 
 ### Prerequisites
 
-- Go 1.22 or higher
-- [Task](https://taskfile.dev/) (optional, for building from source)
-
-### From Binary
-
-Download the latest binary from the [releases page](https://github.com/yourusername/last-run/releases).
-
-Verify the checksum:
-```bash
-shasum -a 256 -c lastrun.sha256
-```
-
-Make it executable:
-```bash
-chmod +x lastrun
-```
-
-Move it to your PATH:
-```bash
-sudo mv lastrun /usr/local/bin/
-```
+- Rust and Cargo (https://rustup.rs/)
 
 ### From Source
 
 Clone the repository:
 ```bash
-git clone https://github.com/yourusername/last-run.git
+git clone https://github.com/eveenendaal/last-run.git
 cd last-run
 ```
 
-Build using Task:
+Build using Cargo:
 ```bash
-task build
+cargo build --release
 ```
 
-Or build using Go directly:
+The compiled binary will be available at `target/release/lastrun`.
+
+Move it to your PATH:
 ```bash
-go build -o bin/lastrun
+sudo mv target/release/lastrun /usr/local/bin/
 ```
 
 ## Usage
@@ -67,7 +49,12 @@ Last Run has two main commands: `update` and `check`.
 Record that a task has been executed:
 
 ```bash
-lastrun update -id=my-task
+lastrun update --id my-task
+```
+
+Or using the short option:
+```bash
+lastrun update -i my-task
 ```
 
 ### Check a Task
@@ -75,31 +62,40 @@ lastrun update -id=my-task
 Check if a task should be run again based on a time threshold:
 
 ```bash
-lastrun check -id=my-task -duration=24h
+lastrun check --id my-task --duration 24h
+```
+
+Or using short options:
+```bash
+lastrun check -i my-task -d 24h
 ```
 
 The command will exit with code 1 if the task is due to run, making it easy to use in scripts:
 
 ```bash
-if lastrun check -id=daily-backup -duration=24h; then
+if lastrun check -i daily-backup -d 24h; then
   echo "Backup not needed yet"
 else
   echo "Running backup..."
   # backup script here
-  lastrun update -id=daily-backup
+  lastrun update -i daily-backup
 fi
+```
+
+### Quiet Mode
+
+Add the `-q` or `--quiet` flag to suppress output messages:
+
+```bash
+lastrun -q update -i my-task
+lastrun -q check -i my-task -d 24h
 ```
 
 ### Duration Format
 
-The duration can be specified in Go's duration format:
+The duration can be specified in the following format:
 - `h` for hours (e.g., `24h` for 1 day)
-- `m` for minutes (e.g., `30m` for 30 minutes)
-- `s` for seconds (e.g., `60s` for 1 minute)
-
-You can combine these units:
-- `72h` for 3 days
-- `1h30m` for 1 hour and 30 minutes
+- `d` for days (e.g., `7d` for 1 week)
 
 ## Data Storage
 
