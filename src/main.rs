@@ -38,7 +38,7 @@ impl Task {
     fn new(id: String) -> Self {
         Task {
             id,
-            last_run: Utc::now(),
+            last_run: DateTime::<Utc>::from(std::time::UNIX_EPOCH),
         }
     }
 
@@ -225,3 +225,4 @@ fn main() -> AppResult<()> {
     
     Ok(())
 }
+
