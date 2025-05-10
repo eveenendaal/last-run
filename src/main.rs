@@ -42,8 +42,11 @@ impl Task {
         }
     }
 
-    fn update(&self, conn: &Connection) -> AppResult<()> {
+    fn update(&mut self, conn: &Connection) -> AppResult<()> {
         self.select(conn)?;
+        
+        // Update the last run time to now
+        self.last_run = Utc::now();
         
         conn.execute(
             "UPDATE tasks SET last_run = ? WHERE id = ?",
@@ -198,7 +201,7 @@ fn main() -> AppResult<()> {
                 return Err(AppError::MissingTaskId);
             }
             
-            let task = Task::new(id);
+            let mut task = Task::new(id);
             task.update(&conn)?;
             
             println!("Task {} updated at {}", task.id, task.last_run.to_rfc3339());
