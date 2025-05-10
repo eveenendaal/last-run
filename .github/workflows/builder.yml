@@ -87,12 +87,6 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache bin directory
-        uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-apps
-          path: bin
-
       - name: Build App
         run: task build
 

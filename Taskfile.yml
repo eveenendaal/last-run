@@ -22,4 +22,4 @@ tasks:
       - test
     cmds:
       - cargo build --release
-      - shasum -a 256 target/release/lastrun > target/release/lastrun.sha256
+      - cd target/release && shasum -a 256 lastrun > lastrun.sha256
