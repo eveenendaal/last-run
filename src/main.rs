@@ -40,7 +40,7 @@ impl Task {
     }
 
     fn update(&self, conn: &Connection) -> AppResult<()> {
-        self.select(conn)?;
+        self.select(conn, false)?;
 
         conn.execute(
             "UPDATE tasks SET last_run = ? WHERE id = ?",
@@ -59,7 +59,7 @@ impl Task {
         Ok(())
     }
 
-    fn select(&self, conn: &Connection) -> AppResult<Option<Task>> {
+    fn select(&self, conn: &Connection, quiet: bool) -> AppResult<Option<Task>> {
         let mut stmt = conn.prepare("SELECT id, last_run FROM tasks WHERE id = ?")?;
         let mut rows = stmt.query([&self.id])?;
 
@@ -71,7 +71,9 @@ impl Task {
             Ok(Some(Task { id, last_run }))
         } else {
             // No record found, insert a new one
-            println!("No record found for task ID: {}", self.id);
+            if !quiet {
+                println!("No record found for task ID: {}", self.id);
+            }
             self.insert(conn)?;
             Ok(Some(Task {
                 id: self.id.clone(),
@@ -162,6 +164,10 @@ fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String
 #[command(name = "lastrun")]
 #[command(about = "A utility to track when tasks were last run")]
 struct Cli {
+    /// Suppress output messages
+    #[arg(short, long)]
+    quiet: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -201,7 +207,9 @@ fn main() -> AppResult<()> {
             let task = Task::new(id, Utc::now());
             task.update(&conn)?;
 
-            println!("Task {} updated at {}", task.id, task.last_run.to_rfc3339());
+            if !cli.quiet {
+                println!("Task {} updated at {}", task.id, task.last_run.to_rfc3339());
+            }
         }
 
         Commands::Check { id, duration } => {
@@ -212,9 +220,11 @@ fn main() -> AppResult<()> {
             let duration = parse_duration(&duration)?;
 
             let task = Task::new(id, DateTime::<Utc>::from(std::time::UNIX_EPOCH));
-            if let Some(existing_task) = task.select(&conn)? {
+            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
                 let (should_run, message) = should_run_task(existing_task.last_run, duration);
-                println!("{}", message);
+                if !cli.quiet {
+                    println!("{}", message);
+                }
 
                 if should_run {
                     process::exit(1);
