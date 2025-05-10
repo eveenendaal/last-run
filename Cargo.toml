@@ -6,7 +6,7 @@ authors = ["Eric Veenendaal"]
 description = "A utility to track when tasks were last run"
 
 [dependencies]
-rusqlite = "0.29.0"
+rusqlite = "0.35.0"
 chrono = "0.4.26"
 clap = { version = "4.3.10", features = ["derive"] }
 dirs = "6.0.0"
