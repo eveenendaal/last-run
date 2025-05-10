@@ -102,7 +102,9 @@ jobs:
         with:
           name: Release ${{ steps.vars.outputs.sha_short }}
           tag_name: ${{ steps.vars.outputs.sha_short }}
-          files: target/release/lastrun
+          files: |
+            target/release/lastrun
+            target/release/lastrun.sha256
 
       - name: Remove old releases
         run: task archive.releases
