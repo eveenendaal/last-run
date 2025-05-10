@@ -10,6 +10,7 @@ tasks:
     desc: Clean the output directory
     cmds:
       - rm -rf bin
+      - cargo clean
   archive.releases:
     desc: Archive the releases
     cmds:
@@ -27,12 +28,13 @@ tasks:
     deps:
       - prep
     cmds:
-      - go vet
+      - cargo test
   build:
-    desc: Build Desktop Logger
+    desc: Build LastRun
     deps:
       - prep
       - test
     cmds:
-      - go build -o {{.app_bin}}
+      - cargo build --release
+      - cp target/release/lastrun {{.app_bin}}
       - shasum -a 256 {{.app_bin}} > {{.app_bin}}.sha256

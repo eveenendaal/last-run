@@ -6,7 +6,8 @@ on:
       - 'master'
     paths:
       - 'Taskfile.yml'
-      - '**/*.go'
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
       - '.github/workflows/builder.yml'
 
 jobs:
@@ -23,10 +24,20 @@ jobs:
       - name: Install Task
         run: pip install go-task-bin
 
-      - uses: actions/setup-go@v5
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          go-version: 'stable'
-          cache: true
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build App
         run: task build

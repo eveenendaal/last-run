@@ -1,0 +1,13 @@
+[package]
+name = "lastrun"
+version = "1.0.0"
+edition = "2021"
+authors = ["Eric Veenendaal"]
+description = "A utility to track when tasks were last run"
+
+[dependencies]
+rusqlite = "0.29.0"
+chrono = "0.4.26"
+clap = { version = "4.3.10", features = ["derive"] }
+dirs = "5.0.1"
+thiserror = "1.0.40"
