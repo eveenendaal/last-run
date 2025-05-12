@@ -8,45 +8,26 @@ Last Run helps you manage recurring tasks by tracking when they were last execut
 
 ## Features
 
-- Track the last execution time of any task with a unique ID
-- Check if a task should be run again based on a configurable time threshold
-- Simple command-line interface
-- Persistent storage using SQLite database
-- Human-readable time formatting
-
-## Installation
-
-### Prerequisites
-
-- Rust and Cargo (https://rustup.rs/)
-
-### From Source
-
-Clone the repository:
-```bash
-git clone https://github.com/eveenendaal/last-run.git
-cd last-run
-```
-
-Build using Cargo:
-```bash
-cargo build --release
-```
-
-The compiled binary will be available at `target/release/lastrun`.
-
-Move it to your PATH:
-```bash
-sudo mv target/release/lastrun /usr/local/bin/
-```
-
 ## Usage
 
-Last Run has two main commands: `update` and `check`.
+Last Run has three main commands: `start`, `update` (or `done`), and `check`.
+
+### Start a Task
+
+Record the start time of a task:
+
+```bash
+lastrun start --id my-task
+```
+
+Or using the short option:
+```bash
+lastrun start -i my-task
+```
 
 ### Update a Task
 
-Record that a task has been executed:
+Record that a task has been completed. If the task was started using the `start` command, the elapsed time will be calculated and displayed:
 
 ```bash
 lastrun update --id my-task
@@ -55,6 +36,12 @@ lastrun update --id my-task
 Or using the short option:
 ```bash
 lastrun update -i my-task
+```
+
+You can also use the `done` synonym for `update`:
+
+```bash
+lastrun done --id my-task
 ```
 
 ### Check a Task
@@ -86,17 +73,3 @@ fi
 
 Add the `-q` or `--quiet` flag to suppress output messages:
 
-```bash
-lastrun -q update -i my-task
-lastrun -q check -i my-task -d 24h
-```
-
-### Duration Format
-
-The duration can be specified in the following format:
-- `h` for hours (e.g., `24h` for 1 day)
-- `d` for days (e.g., `7d` for 1 week)
-
-## Data Storage
-
-Last Run stores task data in a SQLite database located at `~/.tasks/data.db`.

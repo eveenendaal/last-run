@@ -31,44 +31,76 @@ type AppResult<T> = Result<T, AppError>;
 
 struct Task {
     id: String,
-    last_run: DateTime<Utc>,
+    last_run: Option<DateTime<Utc>>,
+    start_time: Option<DateTime<Utc>>, // Added start_time field
 }
 
 impl Task {
-    fn new(id: String, last_run: DateTime<Utc>) -> Self {
-        Task { id, last_run }
+    fn new(id: String) -> Self {
+        Task {
+            id,
+            last_run: None,
+            start_time: None,
+        }
     }
 
     fn update(&self, conn: &Connection) -> AppResult<()> {
         self.select(conn, false)?;
 
-        conn.execute(
-            "UPDATE tasks SET last_run = ? WHERE id = ?",
-            (&self.last_run.to_rfc3339(), &self.id),
-        )?;
+        // Update the last_run time if set
+        if let Some(last_run) = self.last_run {
+            conn.execute(
+                "UPDATE tasks SET last_run = ? WHERE id = ?",
+                (&last_run.to_rfc3339(), &self.id),
+            )?;
+        }
+
+        // Update the start_time if set
+        if let Some(start_time) = self.start_time {
+            conn.execute(
+                "UPDATE tasks SET start_time = ? WHERE id = ?",
+                (&start_time.to_rfc3339(), &self.id),
+            )?;
+        }
 
         Ok(())
     }
 
     fn insert(&self, conn: &Connection) -> AppResult<()> {
         conn.execute(
-            "INSERT INTO tasks (id, last_run) VALUES (?, ?)",
-            (&self.id, &self.last_run.to_rfc3339()),
+            "INSERT INTO tasks (id, last_run, start_time) VALUES (?, ?, ?)",
+            (
+                &self.id,
+                &self.last_run.map(|dt| dt.to_rfc3339()),
+                &self.start_time.map(|dt| dt.to_rfc3339()),
+            ),
         )?;
 
         Ok(())
     }
 
     fn select(&self, conn: &Connection, quiet: bool) -> AppResult<Option<Task>> {
-        let mut stmt = conn.prepare("SELECT id, last_run FROM tasks WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
         let mut rows = stmt.query([&self.id])?;
 
         if let Some(row) = rows.next()? {
             let id: String = row.get(0)?;
-            let last_run_str: String = row.get(1)?;
-            let last_run = DateTime::parse_from_rfc3339(&last_run_str)?.with_timezone(&Utc);
+            let last_run_str: Option<String> = row.get(1)?;
+            let last_run = last_run_str
+                .map(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .flatten()
+                .map(|dt| dt.with_timezone(&Utc));
+            let start_time: Option<String> = row.get(2)?;
+            let start_time = start_time
+                .map(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .flatten()
+                .map(|dt| dt.with_timezone(&Utc));
 
-            Ok(Some(Task { id, last_run }))
+            Ok(Some(Task {
+                id,
+                last_run,
+                start_time,
+            }))
         } else {
             // No record found, insert a new one
             if !quiet {
@@ -78,8 +110,18 @@ impl Task {
             Ok(Some(Task {
                 id: self.id.clone(),
                 last_run: self.last_run,
+                start_time: self.start_time,
             }))
         }
+    }
+
+    fn start(&mut self, conn: &Connection) -> AppResult<()> {
+        self.start_time = Some(Utc::now()); // Set the start time
+        conn.execute(
+            "UPDATE tasks SET start_time = ? WHERE id = ?",
+            (&self.start_time.unwrap().to_rfc3339(), &self.id),
+        )?;
+        Ok(())
     }
 }
 
@@ -95,7 +137,8 @@ fn init_db() -> AppResult<Connection> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
-            last_run TEXT
+            last_run TEXT,
+            start_time TEXT
         )",
         [],
     )?;
@@ -133,6 +176,14 @@ fn format_duration(duration: Duration) -> String {
     } else {
         format!("{}m", minutes)
     }
+}
+
+fn format_duration_hundredths(duration: Duration) -> String {
+    let total_milliseconds = duration.num_milliseconds();
+    let seconds = total_milliseconds / 1000;
+    let hundredths = (total_milliseconds % 1000) / 10;
+
+    format!("{}.{}s", seconds, hundredths)
 }
 
 fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String) {
@@ -181,6 +232,20 @@ enum Commands {
         id: String,
     },
 
+    /// Synonym for update
+    Done {
+        /// Task ID to mark as done
+        #[arg(short, long)]
+        id: String,
+    },
+
+    /// Start a task
+    Start {
+        /// Task ID to start
+        #[arg(short, long)]
+        id: String,
+    },
+
     /// Check if a task is due to run
     Check {
         /// Task ID to check
@@ -199,16 +264,55 @@ fn main() -> AppResult<()> {
     let conn = init_db()?;
 
     match cli.command {
-        Commands::Update { id } => {
+        Commands::Update { id } | Commands::Done { id } => {
             if id.is_empty() {
                 return Err(AppError::MissingTaskId);
             }
 
-            let task = Task::new(id, Utc::now());
-            task.update(&conn)?;
+            let mut task = Task::new(id);
+            task.last_run = Some(Utc::now());
+            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
+                task.start_time = existing_task.start_time; // Preserve the existing start_time
+                if let Some(start_time) = task.start_time {
+                    let elapsed = Utc::now().signed_duration_since(start_time);
+                    if !cli.quiet {
+                        println!(
+                            "Task {} completed. Elapsed time: {}",
+                            task.id,
+                            format_duration_hundredths(elapsed)
+                        );
+                    }
+                }
+                task.update(&conn)?;
+            }
 
             if !cli.quiet {
-                println!("Task {} updated at {}", task.id, task.last_run.to_rfc3339());
+                println!(
+                    "Task {} updated at {}",
+                    task.id,
+                    task.last_run.unwrap().to_rfc3339()
+                );
+            }
+        }
+
+        Commands::Start { id } => {
+            if id.is_empty() {
+                return Err(AppError::MissingTaskId);
+            }
+
+            let mut task = Task::new(id);
+            task.start_time = Some(Utc::now());
+            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
+                task.start_time = existing_task.start_time; // Preserve existing start time if any
+            }
+            task.start(&conn)?;
+
+            if !cli.quiet {
+                println!(
+                    "Task {} started at {}",
+                    task.id,
+                    task.start_time.unwrap().to_rfc3339()
+                );
             }
         }
 
@@ -219,15 +323,29 @@ fn main() -> AppResult<()> {
 
             let duration = parse_duration(&duration)?;
 
-            let task = Task::new(id, DateTime::<Utc>::from(std::time::UNIX_EPOCH));
+            let task = Task::new(id);
             if let Some(existing_task) = task.select(&conn, cli.quiet)? {
-                let (should_run, message) = should_run_task(existing_task.last_run, duration);
-                if !cli.quiet {
-                    println!("{}", message);
-                }
+                if let Some(last_run) = existing_task.last_run {
+                    let (should_run, message) = should_run_task(last_run, duration);
+                    if !cli.quiet {
+                        println!("{}", message);
+                    }
 
-                if should_run {
+                    if should_run {
+                        process::exit(1);
+                    }
+                } else {
+                    if !cli.quiet {
+                        println!(
+                            "Task {} has no recorded last run. It is considered due.",
+                            task.id
+                        );
+                    }
                     process::exit(1);
+                }
+            } else {
+                if !cli.quiet {
+                    println!("No record found for task ID: {}", task.id);
                 }
             }
         }
