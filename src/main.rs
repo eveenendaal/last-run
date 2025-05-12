@@ -318,7 +318,9 @@ fn main() -> AppResult<()> {
 
             if !cli.quiet {
                 let elapsed_msg = elapsed_time
-                    .map(|elapsed| format!(". Elapsed time: {}{}{}", WHITE, elapsed, GREEN))
+                    .map(|elapsed| {
+                        format!("{}. Elapsed time: {}{}{}", GREEN, WHITE, elapsed, GREEN)
+                    })
                     .unwrap_or_default();
 
                 println!(
