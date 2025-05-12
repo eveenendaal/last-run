@@ -68,11 +68,6 @@ impl Task {
             let elapsed_time = last_run
                 .signed_duration_since(start_time)
                 .num_milliseconds();
-            conn.execute(
-                "UPDATE tasks SET elapsed_time = ? WHERE id = ?",
-                (elapsed_time, &self.id),
-            )?;
-
             // Insert a record into the log table
             conn.execute(
                 "INSERT INTO task_log (id, end_time, elapsed_time) VALUES (?, ?, ?)",
@@ -155,8 +150,7 @@ fn init_db() -> AppResult<Connection> {
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT,
-            elapsed_time INTEGER
+            start_time TEXT
         )",
         [],
     )?;
