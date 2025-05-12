@@ -72,6 +72,12 @@ impl Task {
                 "UPDATE tasks SET elapsed_time = ? WHERE id = ?",
                 (elapsed_time, &self.id),
             )?;
+
+            // Insert a record into the log table
+            conn.execute(
+                "INSERT INTO task_log (id, end_time, elapsed_time) VALUES (?, ?, ?)",
+                (&self.id, &last_run.to_rfc3339(), elapsed_time),
+            )?;
         }
 
         Ok(())
@@ -151,6 +157,16 @@ fn init_db() -> AppResult<Connection> {
             last_run TEXT,
             start_time TEXT,
             elapsed_time INTEGER
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS task_log (
+            id TEXT,
+            end_time TEXT,
+            elapsed_time INTEGER,
+            PRIMARY KEY (id, end_time)
         )",
         [],
     )?;
