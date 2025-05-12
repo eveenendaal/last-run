@@ -284,6 +284,24 @@ enum Commands {
         #[arg(short, long, default_value = "24h")]
         duration: String,
     },
+
+    /// Display execution logs for tasks
+    Logs {
+        /// Limit number of logs to show (0 for all)
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+
+        /// Filter logs by task ID
+        #[arg(short, long)]
+        id: Option<String>,
+    },
+
+    /// Display current status of all tasks
+    Status {
+        /// Filter tasks by ID
+        #[arg(short, long)]
+        id: Option<String>,
+    },
 }
 
 const BOLD: &str = "\x1b[1m";
@@ -291,6 +309,396 @@ const RESET: &str = "\x1b[0m";
 const GREEN: &str = "\x1b[32m";
 const RED: &str = "\x1b[31m";
 const WHITE: &str = "\x1b[97m"; // Updated to brighter white
+const BLUE: &str = "\x1b[34m";
+const YELLOW: &str = "\x1b[33m";
+const CYAN: &str = "\x1b[36m";
+
+/// Get all task logs from the database
+fn get_task_logs(
+    conn: &Connection,
+    task_id: Option<String>,
+    limit: usize,
+) -> AppResult<Vec<(String, DateTime<Utc>, i64)>> {
+    let mut query = String::from("SELECT id, end_time, elapsed_time FROM task_log");
+
+    if let Some(_) = &task_id {
+        query.push_str(" WHERE id = ?");
+    }
+
+    query.push_str(" ORDER BY end_time DESC");
+
+    if limit > 0 {
+        query.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    let mut stmt = conn.prepare(&query)?;
+
+    // Create a mapping function for the rows to handle parsing correctly
+    let map_log_row = |row: &rusqlite::Row| -> rusqlite::Result<(String, DateTime<Utc>, i64)> {
+        let id: String = row.get(0)?;
+        let end_time_str: String = row.get(1)?;
+        let elapsed_time: i64 = row.get(2)?;
+
+        // Handle DateTime parsing outside the ? operator to avoid type conversion issues
+        let end_time = match DateTime::parse_from_rfc3339(&end_time_str) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(err) => {
+                return Err(rusqlite::Error::InvalidParameterName(format!(
+                    "Date parse error: {}",
+                    err
+                )))
+            }
+        };
+
+        Ok((id, end_time, elapsed_time))
+    };
+
+    let mut logs = Vec::new();
+
+    // Use the mapping function with params
+    if let Some(id) = task_id {
+        let rows = stmt.query_map([id], map_log_row)?;
+        for row in rows {
+            logs.push(row?);
+        }
+    } else {
+        let rows = stmt.query_map([], map_log_row)?;
+        for row in rows {
+            logs.push(row?);
+        }
+    }
+
+    Ok(logs)
+}
+
+/// Get all tasks with their current status
+fn get_all_tasks(
+    conn: &Connection,
+    task_id: Option<String>,
+) -> AppResult<
+    Vec<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )>,
+> {
+    let mut query = String::from("SELECT id, last_run, start_time, elapsed_time FROM tasks");
+
+    if let Some(_) = &task_id {
+        query.push_str(" WHERE id = ?");
+    }
+
+    query.push_str(" ORDER BY id");
+
+    let mut stmt = conn.prepare(&query)?;
+
+    // Create a mapping function for the rows to handle parsing correctly
+    let map_task_row = |row: &rusqlite::Row| -> rusqlite::Result<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )> {
+        let id: String = row.get(0)?;
+        let last_run: Option<String> = row.get(1)?;
+        let start_time: Option<String> = row.get(2)?;
+        let elapsed_time: Option<i64> = row.get(3)?;
+
+        // Handle DateTime parsing safely to avoid error conversion issues
+        let last_run = match last_run {
+            Some(s) => match DateTime::parse_from_rfc3339(&s) {
+                Ok(dt) => Some(dt.with_timezone(&Utc)),
+                Err(_) => None,
+            },
+            None => None,
+        };
+
+        let start_time = match start_time {
+            Some(s) => match DateTime::parse_from_rfc3339(&s) {
+                Ok(dt) => Some(dt.with_timezone(&Utc)),
+                Err(_) => None,
+            },
+            None => None,
+        };
+
+        Ok((id, last_run, start_time, elapsed_time))
+    };
+
+    let mut tasks = Vec::new();
+
+    // Use the mapping function with params
+    if let Some(id) = task_id {
+        let rows = stmt.query_map([id], map_task_row)?;
+        for row in rows {
+            tasks.push(row?);
+        }
+    } else {
+        let rows = stmt.query_map([], map_task_row)?;
+        for row in rows {
+            tasks.push(row?);
+        }
+    }
+
+    Ok(tasks)
+}
+
+/// Format and print task status
+fn print_task_status(
+    tasks: &[(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )],
+) {
+    // Calculate dynamic column widths
+    let mut id_width = 12; // Minimum width
+    let last_run_width = 19;
+    let started_width = 19;
+    let elapsed_width = 8;
+
+    // Find the maximum ID length
+    for (id, _, _, _) in tasks {
+        id_width = id_width.max(id.len());
+    }
+    id_width += 2;
+
+    // Calculate total width
+    let total_width = id_width + last_run_width + started_width + elapsed_width + 5; // 5 for borders
+
+    // Top border
+    println!(
+        "\n{}{}╔{}╗{}",
+        BOLD, CYAN,
+        "═".repeat(total_width - 2),
+        RESET
+    );
+
+    // Title
+    let title = "TASK STATUS";
+    let padding_total = total_width - 2 - title.len();
+    let padding_left = padding_total / 2;
+    let padding_right = padding_total - padding_left;
+    println!(
+        "{}{}║{}{}{}║{}",
+        BOLD, CYAN,
+        " ".repeat(padding_left), title, " ".repeat(padding_right),
+        RESET
+    );
+
+    // Header border
+    println!(
+        "{}{}╠{}╦{}╦{}╦{}╣{}",
+        BOLD, CYAN,
+        "═".repeat(id_width),
+        "═".repeat(last_run_width),
+        "═".repeat(started_width),
+        "═".repeat(elapsed_width),
+        RESET
+    );
+
+    if tasks.is_empty() {
+        println!(
+            "{bold}{cyan}║{msg:<width$}║{reset}",
+            bold = BOLD,
+            cyan = CYAN,
+            msg = " No tasks found",
+            width = total_width - 4,
+            reset = RESET
+        );
+    } else {
+        // Column headers
+        println!(
+            "{bold}{cyan}║{id:<idw$}║{last:<lrw$}║{start:<stw$}║{elapsed:<elw$}║{reset}",
+            bold = BOLD,
+            cyan = CYAN,
+            id = "TASK ID",
+            idw = id_width,
+            last = "LAST RUN",
+            lrw = last_run_width,
+            start = "STARTED",
+            stw = started_width,
+            elapsed = "ELAPSED",
+            elw = elapsed_width,
+            reset = RESET
+        );
+
+        // Header/content separator
+        println!(
+            "{}{}╠{}╬{}╬{}╬{}╣{}",
+            BOLD, CYAN,
+            "═".repeat(id_width),
+            "═".repeat(last_run_width),
+            "═".repeat(started_width),
+            "═".repeat(elapsed_width),
+            RESET
+        );
+
+        for (id, last_run, start_time, elapsed_time) in tasks {
+            let now = Utc::now();
+            let status_color = if start_time.is_some() && last_run.is_none() {
+                YELLOW
+            } else if let Some(lr) = last_run {
+                if now.signed_duration_since(*lr) > Duration::days(1) {
+                    RED
+                } else {
+                    GREEN
+                }
+            } else {
+                BLUE
+            };
+
+            let last_run_str = if let Some(lr) = last_run {
+                format!("{}", lr.format("%Y-%m-%d %H:%M:%S"))
+            } else {
+                "never".to_string()
+            };
+
+            let start_time_str = if let Some(st) = start_time {
+                format!("{}", st.format("%Y-%m-%d %H:%M:%S"))
+            } else {
+                "-".to_string()
+            };
+
+            let elapsed_str = if let Some(et) = elapsed_time {
+                format_duration_hundredths(Duration::milliseconds(*et))
+            } else {
+                "-".to_string()
+            };
+
+            println!(
+                "{bold}{cyan}║{color}{id:<idw$}{cyan}║{color}{last:<lrw$}{cyan}║{color}{start:<stw$}{cyan}║{color}{elapsed:<elw$}{cyan}║{reset}",
+                bold = BOLD,
+                cyan = CYAN,
+                color = status_color,
+                id = id,
+                idw = id_width,
+                last = last_run_str,
+                lrw = last_run_width,
+                start = start_time_str,
+                stw = started_width,
+                elapsed = elapsed_str,
+                elw = elapsed_width,
+                reset = RESET
+            );
+        }
+    }
+
+    // Bottom border
+    println!(
+        "{}{}╚{}╝{}",
+        BOLD, CYAN,
+        "═".repeat(total_width - 2),
+        RESET
+    );
+}
+
+/// Format and print task logs
+fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
+    // Calculate dynamic column widths
+    let mut id_width = 12; // Minimum width
+    let completion_width = 19;
+    let duration_width = 8;
+
+    // Find the maximum ID length
+    for (id, _, _) in logs {
+        id_width = id_width.max(id.len());
+    }
+    id_width += 2;
+
+    // Calculate total width
+    let total_width = id_width + completion_width + duration_width + 4; // 4 for borders
+
+    // Top border
+    println!(
+        "\n{}{}╔{}╗{}",
+        BOLD, BLUE,
+        "═".repeat(total_width - 2),
+        RESET
+    );
+
+    // Title
+    let title = "TASK LOGS";
+    let padding_total = total_width - 2 - title.len();
+    let padding_left = padding_total / 2;
+    let padding_right = padding_total - padding_left;
+    println!(
+        "{}{}║{}{}{}║{}",
+        BOLD, BLUE,
+        " ".repeat(padding_left), title, " ".repeat(padding_right),
+        RESET
+    );
+
+    // Header border
+    println!(
+        "{}{}╠{}╦{}╦{}╣{}",
+        BOLD, BLUE,
+        "═".repeat(id_width),
+        "═".repeat(completion_width),
+        "═".repeat(duration_width),
+        RESET
+    );
+
+    if logs.is_empty() {
+        println!(
+            "{bold}{blue}║{msg:<width$}║{reset}",
+            bold = BOLD,
+            blue = BLUE,
+            msg = " No logs found",
+            width = total_width - 4,
+            reset = RESET
+        );
+    } else {
+        // Column headers
+        println!(
+            "{bold}{blue}║{id:<idw$}║{comp:<cw$}║{dur:<dw$}║{reset}",
+            bold = BOLD,
+            blue = BLUE,
+            id = "TASK ID",
+            idw = id_width,
+            comp = "COMPLETION TIME",
+            cw = completion_width,
+            dur = "DURATION",
+            dw = duration_width,
+            reset = RESET
+        );
+
+        // Header/content separator
+        println!(
+            "{}{}╠{}╬{}╬{}╣{}",
+            BOLD, BLUE,
+            "═".repeat(id_width),
+            "═".repeat(completion_width),
+            "═".repeat(duration_width),
+            RESET
+        );
+
+        for (id, end_time, elapsed_time) in logs {
+            println!(
+                "{bold}{blue}║{white}{id:<idw$}{blue}║{white}{end:<cw$}{blue}║{white}{elapsed:<dw$}{blue}║{reset}",
+                bold = BOLD,
+                blue = BLUE,
+                white = WHITE,
+                id = id,
+                idw = id_width,
+                end = end_time.format("%Y-%m-%d %H:%M:%S"),
+                cw = completion_width,
+                elapsed = format_duration_hundredths(Duration::milliseconds(*elapsed_time)),
+                dw = duration_width,
+                reset = RESET
+            );
+        }
+    }
+
+    // Bottom border
+    println!(
+        "{}{}╚{}╝{}",
+        BOLD, BLUE,
+        "═".repeat(total_width - 2),
+        RESET
+    );
+}
 
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
@@ -407,7 +815,24 @@ fn main() -> AppResult<()> {
                 }
             }
         }
+
+        Commands::Logs { limit, id } => {
+            let logs = get_task_logs(&conn, id, limit)?;
+
+            if !cli.quiet {
+                print_task_logs(&logs);
+            }
+        }
+
+        Commands::Status { id } => {
+            let tasks = get_all_tasks(&conn, id)?;
+
+            if !cli.quiet {
+                print_task_status(&tasks);
+            }
+        }
     }
 
     Ok(())
 }
+

@@ -10,7 +10,7 @@ Last Run helps you manage recurring tasks by tracking when they were last execut
 
 ## Usage
 
-Last Run has three main commands: `start`, `update` (or `done`), and `check`.
+Last Run has several commands for tracking and monitoring tasks: `start`, `update` (or `done`), `check`, `status`, and `logs`.
 
 ### Start a Task
 
@@ -67,6 +67,50 @@ else
   # backup script here
   lastrun update -i daily-backup
 fi
+```
+
+### View Task Status
+
+Display the current status of all tasks:
+
+```bash
+lastrun status
+```
+
+To filter by a specific task ID:
+
+```bash
+lastrun status --id my-task
+```
+
+Or using the short option:
+```bash
+lastrun status -i my-task
+```
+
+### View Task Logs
+
+Display execution logs for all tasks:
+
+```bash
+lastrun logs
+```
+
+To filter by a specific task ID:
+
+```bash
+lastrun logs --id my-task
+```
+
+To change the number of logs displayed (default is 20):
+
+```bash
+lastrun logs --limit 50
+```
+
+Or using short options:
+```bash
+lastrun logs -i my-task -l 50
 ```
 
 ### Quiet Mode
