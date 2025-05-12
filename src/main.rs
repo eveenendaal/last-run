@@ -317,24 +317,22 @@ fn main() -> AppResult<()> {
             }
 
             if !cli.quiet {
-                if let Some(elapsed) = elapsed_time {
-                    println!(
-                        "{}{}Task {}{}{} updated. Elapsed time: {}{}{}",
-                        BOLD, GREEN, WHITE, task.id, GREEN, WHITE, elapsed, RESET
-                    );
-                } else {
-                    println!(
-                        "{}{}Task {}{}{} updated at {}{}{}",
-                        BOLD,
-                        GREEN,
-                        WHITE,
-                        task.id,
-                        GREEN,
-                        WHITE,
-                        task.last_run.unwrap().to_rfc3339(),
-                        RESET
-                    );
-                }
+                let elapsed_msg = elapsed_time
+                    .map(|elapsed| format!(". Elapsed time: {}{}{}", WHITE, elapsed, GREEN))
+                    .unwrap_or_default();
+
+                println!(
+                    "{}{}Task {}{}{} finished at {}{}{}{}",
+                    BOLD,
+                    GREEN,
+                    WHITE,
+                    task.id,
+                    GREEN,
+                    WHITE,
+                    task.last_run.unwrap().to_rfc3339(),
+                    elapsed_msg,
+                    RESET
+                );
             }
         }
 
