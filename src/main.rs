@@ -311,7 +311,6 @@ const RED: &str = "\x1b[31m";
 const WHITE: &str = "\x1b[97m"; // Updated to brighter white
 const BLUE: &str = "\x1b[34m";
 const YELLOW: &str = "\x1b[33m";
-const CYAN: &str = "\x1b[36m";
 
 /// Get all task logs from the database
 fn get_task_logs(
@@ -456,13 +455,14 @@ fn print_task_status(
     let mut id_width = 12; // Minimum width
     let last_run_width = 19;
     let started_width = 19;
-    let elapsed_width = 8;
+    let elapsed_width = 10;
 
     // Find the maximum ID length
     for (id, _, _, _) in tasks {
         id_width = id_width.max(id.len());
     }
-    id_width += 2;
+    // Add 4: 2 for padding, 2 for extra spaces
+    id_width += 4;
 
     // Calculate total width
     let total_width = id_width + last_run_width + started_width + elapsed_width + 5; // 5 for borders
@@ -470,67 +470,73 @@ fn print_task_status(
     // Top border
     println!(
         "\n{}{}╔{}╗{}",
-        BOLD, CYAN,
-        "═".repeat(total_width - 2),
+        BOLD,
+        BLUE,
+        "═".repeat(total_width + 2),
         RESET
     );
 
     // Title
     let title = "TASK STATUS";
-    let padding_total = total_width - 2 - title.len();
+    let padding_total = total_width + 2 - title.len();
     let padding_left = padding_total / 2;
     let padding_right = padding_total - padding_left;
     println!(
         "{}{}║{}{}{}║{}",
-        BOLD, CYAN,
-        " ".repeat(padding_left), title, " ".repeat(padding_right),
+        BOLD,
+        BLUE,
+        " ".repeat(padding_left),
+        title,
+        " ".repeat(padding_right),
         RESET
     );
 
     // Header border
     println!(
         "{}{}╠{}╦{}╦{}╦{}╣{}",
-        BOLD, CYAN,
+        BOLD,
+        BLUE,
         "═".repeat(id_width),
-        "═".repeat(last_run_width),
-        "═".repeat(started_width),
+        "═".repeat(last_run_width + 2),
+        "═".repeat(started_width + 2),
         "═".repeat(elapsed_width),
         RESET
     );
 
     if tasks.is_empty() {
         println!(
-            "{bold}{cyan}║{msg:<width$}║{reset}",
+            "{bold}{blue}║{msg:<width$}║{reset}",
             bold = BOLD,
-            cyan = CYAN,
-            msg = " No tasks found",
+            blue = BLUE,
+            msg = " No tasks found ",
             width = total_width - 4,
             reset = RESET
         );
     } else {
         // Column headers
         println!(
-            "{bold}{cyan}║{id:<idw$}║{last:<lrw$}║{start:<stw$}║{elapsed:<elw$}║{reset}",
+            "{bold}{blue}║ {id:<idw$} ║ {last:<lrw$} ║ {start:<stw$} ║ {elapsed:<elw$} ║{reset}",
             bold = BOLD,
-            cyan = CYAN,
+            blue = BLUE,
             id = "TASK ID",
-            idw = id_width,
+            idw = id_width - 2,
             last = "LAST RUN",
             lrw = last_run_width,
             start = "STARTED",
             stw = started_width,
             elapsed = "ELAPSED",
-            elw = elapsed_width,
+            elw = elapsed_width - 2,
             reset = RESET
         );
 
         // Header/content separator
         println!(
             "{}{}╠{}╬{}╬{}╬{}╣{}",
-            BOLD, CYAN,
+            BOLD,
+            BLUE,
             "═".repeat(id_width),
-            "═".repeat(last_run_width),
-            "═".repeat(started_width),
+            "═".repeat(last_run_width + 2),
+            "═".repeat(started_width + 2),
             "═".repeat(elapsed_width),
             RESET
         );
@@ -543,7 +549,7 @@ fn print_task_status(
                 if now.signed_duration_since(*lr) > Duration::days(1) {
                     RED
                 } else {
-                    GREEN
+                    WHITE
                 }
             } else {
                 BLUE
@@ -568,43 +574,39 @@ fn print_task_status(
             };
 
             println!(
-                "{bold}{cyan}║{color}{id:<idw$}{cyan}║{color}{last:<lrw$}{cyan}║{color}{start:<stw$}{cyan}║{color}{elapsed:<elw$}{cyan}║{reset}",
+                "{bold}{blue}║ {color}{id:<idw$}{blue} ║ {color}{last:<lrw$}{blue} ║ {color}{start:<stw$}{blue} ║ {color}{elapsed:<elw$}{blue} ║{reset}",
                 bold = BOLD,
-                cyan = CYAN,
+                blue = BLUE,
                 color = status_color,
                 id = id,
-                idw = id_width,
+                idw = id_width - 2,
                 last = last_run_str,
-                lrw = last_run_width,
+                lrw = last_run_width - 2,
                 start = start_time_str,
-                stw = started_width,
+                stw = started_width - 2,
                 elapsed = elapsed_str,
-                elw = elapsed_width,
+                elw = elapsed_width - 2,
                 reset = RESET
             );
         }
     }
 
     // Bottom border
-    println!(
-        "{}{}╚{}╝{}",
-        BOLD, CYAN,
-        "═".repeat(total_width - 2),
-        RESET
-    );
+    println!("{}{}╚{}╝{}", BOLD, BLUE, "═".repeat(total_width + 2), RESET);
 }
 
 /// Format and print task logs
 fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     // Calculate dynamic column widths
     let mut id_width = 12; // Minimum width
-    let completion_width = 19;
-    let duration_width = 8;
+    let completion_width = 21;
+    let duration_width = 10;
 
     // Find the maximum ID length
     for (id, _, _) in logs {
         id_width = id_width.max(id.len());
     }
+    // Add 4: 2 for padding, 2 for extra spaces
     id_width += 2;
 
     // Calculate total width
@@ -613,7 +615,8 @@ fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     // Top border
     println!(
         "\n{}{}╔{}╗{}",
-        BOLD, BLUE,
+        BOLD,
+        BLUE,
         "═".repeat(total_width - 2),
         RESET
     );
@@ -625,15 +628,19 @@ fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     let padding_right = padding_total - padding_left;
     println!(
         "{}{}║{}{}{}║{}",
-        BOLD, BLUE,
-        " ".repeat(padding_left), title, " ".repeat(padding_right),
+        BOLD,
+        BLUE,
+        " ".repeat(padding_left),
+        title,
+        " ".repeat(padding_right),
         RESET
     );
 
     // Header border
     println!(
         "{}{}╠{}╦{}╦{}╣{}",
-        BOLD, BLUE,
+        BOLD,
+        BLUE,
         "═".repeat(id_width),
         "═".repeat(completion_width),
         "═".repeat(duration_width),
@@ -645,29 +652,30 @@ fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
             "{bold}{blue}║{msg:<width$}║{reset}",
             bold = BOLD,
             blue = BLUE,
-            msg = " No logs found",
+            msg = " No logs found ",
             width = total_width - 4,
             reset = RESET
         );
     } else {
         // Column headers
         println!(
-            "{bold}{blue}║{id:<idw$}║{comp:<cw$}║{dur:<dw$}║{reset}",
+            "{bold}{blue}║ {id:<idw$} ║ {comp:<cw$} ║ {dur:<dw$} ║{reset}",
             bold = BOLD,
             blue = BLUE,
             id = "TASK ID",
-            idw = id_width,
+            idw = id_width - 2,
             comp = "COMPLETION TIME",
-            cw = completion_width,
+            cw = completion_width - 2,
             dur = "DURATION",
-            dw = duration_width,
+            dw = duration_width - 2,
             reset = RESET
         );
 
         // Header/content separator
         println!(
             "{}{}╠{}╬{}╬{}╣{}",
-            BOLD, BLUE,
+            BOLD,
+            BLUE,
             "═".repeat(id_width),
             "═".repeat(completion_width),
             "═".repeat(duration_width),
@@ -676,28 +684,23 @@ fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
 
         for (id, end_time, elapsed_time) in logs {
             println!(
-                "{bold}{blue}║{white}{id:<idw$}{blue}║{white}{end:<cw$}{blue}║{white}{elapsed:<dw$}{blue}║{reset}",
+                "{bold}{blue}║ {white}{id:<idw$}{blue} ║ {white}{end:<cw$}{blue} ║ {white}{elapsed:<dw$}{blue} ║{reset}",
                 bold = BOLD,
                 blue = BLUE,
                 white = WHITE,
                 id = id,
-                idw = id_width,
+                idw = id_width - 2,
                 end = end_time.format("%Y-%m-%d %H:%M:%S"),
-                cw = completion_width,
+                cw = completion_width - 2,
                 elapsed = format_duration_hundredths(Duration::milliseconds(*elapsed_time)),
-                dw = duration_width,
+                dw = duration_width - 2,
                 reset = RESET
             );
         }
     }
 
     // Bottom border
-    println!(
-        "{}{}╚{}╝{}",
-        BOLD, BLUE,
-        "═".repeat(total_width - 2),
-        RESET
-    );
+    println!("{}{}╚{}╝{}", BOLD, BLUE, "═".repeat(total_width - 2), RESET);
 }
 
 fn main() -> AppResult<()> {
@@ -835,4 +838,3 @@ fn main() -> AppResult<()> {
 
     Ok(())
 }
-
