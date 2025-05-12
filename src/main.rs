@@ -63,6 +63,17 @@ impl Task {
             )?;
         }
 
+        // Update the elapsed_time if start_time and last_run are set
+        if let (Some(start_time), Some(last_run)) = (self.start_time, self.last_run) {
+            let elapsed_time = last_run
+                .signed_duration_since(start_time)
+                .num_milliseconds();
+            conn.execute(
+                "UPDATE tasks SET elapsed_time = ? WHERE id = ?",
+                (elapsed_time, &self.id),
+            )?;
+        }
+
         Ok(())
     }
 
@@ -138,7 +149,8 @@ fn init_db() -> AppResult<Connection> {
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT
+            start_time TEXT,
+            elapsed_time INTEGER
         )",
         [],
     )?;
@@ -258,6 +270,12 @@ enum Commands {
     },
 }
 
+const BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+const GREEN: &str = "\x1b[32m";
+const RED: &str = "\x1b[31m";
+const WHITE: &str = "\x1b[97m"; // Updated to brighter white
+
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
@@ -271,27 +289,34 @@ fn main() -> AppResult<()> {
 
             let mut task = Task::new(id);
             task.last_run = Some(Utc::now());
+            let mut elapsed_time: Option<String> = None;
+
             if let Some(existing_task) = task.select(&conn, cli.quiet)? {
                 task.start_time = existing_task.start_time; // Preserve the existing start_time
                 if let Some(start_time) = task.start_time {
                     let elapsed = Utc::now().signed_duration_since(start_time);
-                    if !cli.quiet {
-                        println!(
-                            "Task {} completed. Elapsed time: {}",
-                            task.id,
-                            format_duration_hundredths(elapsed)
-                        );
-                    }
+                    elapsed_time = Some(format_duration_hundredths(elapsed));
                 }
                 task.update(&conn)?;
             }
 
             if !cli.quiet {
-                println!(
-                    "Task {} updated at {}",
-                    task.id,
-                    task.last_run.unwrap().to_rfc3339()
-                );
+                if let Some(elapsed) = elapsed_time {
+                    println!(
+                        "{}{}Task {} updated. Elapsed time: {}{}{}",
+                        BOLD, GREEN, task.id, WHITE, elapsed, RESET
+                    );
+                } else {
+                    println!(
+                        "{}{}Task {} updated at {}{}{}",
+                        BOLD,
+                        GREEN,
+                        task.id,
+                        WHITE,
+                        task.last_run.unwrap().to_rfc3339(),
+                        RESET
+                    );
+                }
             }
         }
 
@@ -303,15 +328,19 @@ fn main() -> AppResult<()> {
             let mut task = Task::new(id);
             task.start_time = Some(Utc::now());
             if let Some(existing_task) = task.select(&conn, cli.quiet)? {
-                task.start_time = existing_task.start_time; // Preserve existing start time if any
+                task.start_time = existing_task.start_time; // Preserve the existing start time if any
             }
             task.start(&conn)?;
 
             if !cli.quiet {
                 println!(
-                    "Task {} started at {}",
+                    "{}{}Task {} started at {}{}{}",
+                    BOLD,
+                    GREEN,
                     task.id,
-                    task.start_time.unwrap().to_rfc3339()
+                    WHITE,
+                    task.start_time.unwrap().to_rfc3339(),
+                    RESET
                 );
             }
         }
@@ -328,7 +357,13 @@ fn main() -> AppResult<()> {
                 if let Some(last_run) = existing_task.last_run {
                     let (should_run, message) = should_run_task(last_run, duration);
                     if !cli.quiet {
-                        println!("{}", message);
+                        println!(
+                            "{}{}{}{}",
+                            BOLD,
+                            if should_run { RED } else { GREEN },
+                            message,
+                            RESET
+                        );
                     }
 
                     if should_run {
@@ -337,15 +372,18 @@ fn main() -> AppResult<()> {
                 } else {
                     if !cli.quiet {
                         println!(
-                            "Task {} has no recorded last run. It is considered due.",
-                            task.id
+                            "{}{}Task {} has no recorded last run. It is considered due.{}",
+                            BOLD, RED, task.id, RESET
                         );
                     }
                     process::exit(1);
                 }
             } else {
                 if !cli.quiet {
-                    println!("No record found for task ID: {}", task.id);
+                    println!(
+                        "{}{}No record found for task ID: {}{}",
+                        BOLD, RED, task.id, RESET
+                    );
                 }
             }
         }
