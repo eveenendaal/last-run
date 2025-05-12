@@ -319,15 +319,17 @@ fn main() -> AppResult<()> {
             if !cli.quiet {
                 if let Some(elapsed) = elapsed_time {
                     println!(
-                        "{}{}Task {} updated. Elapsed time: {}{}{}",
-                        BOLD, GREEN, task.id, WHITE, elapsed, RESET
+                        "{}{}Task {}{}{} updated. Elapsed time: {}{}{}",
+                        BOLD, GREEN, WHITE, task.id, GREEN, WHITE, elapsed, RESET
                     );
                 } else {
                     println!(
-                        "{}{}Task {} updated at {}{}{}",
+                        "{}{}Task {}{}{} updated at {}{}{}",
                         BOLD,
                         GREEN,
+                        WHITE,
                         task.id,
+                        GREEN,
                         WHITE,
                         task.last_run.unwrap().to_rfc3339(),
                         RESET
@@ -350,10 +352,12 @@ fn main() -> AppResult<()> {
 
             if !cli.quiet {
                 println!(
-                    "{}{}Task {} started at {}{}{}",
+                    "{}{}Task {}{}{} started at {}{}{}",
                     BOLD,
                     GREEN,
+                    WHITE,
                     task.id,
+                    GREEN,
                     WHITE,
                     task.start_time.unwrap().to_rfc3339(),
                     RESET
@@ -388,8 +392,8 @@ fn main() -> AppResult<()> {
                 } else {
                     if !cli.quiet {
                         println!(
-                            "{}{}Task {} has no recorded last run. It is considered due.{}",
-                            BOLD, RED, task.id, RESET
+                            "{}{}Task {}{}{} has no recorded last run. It is considered due.{}",
+                            BOLD, RED, WHITE, task.id, RED, RESET
                         );
                     }
                     process::exit(1);
@@ -397,8 +401,8 @@ fn main() -> AppResult<()> {
             } else {
                 if !cli.quiet {
                     println!(
-                        "{}{}No record found for task ID: {}{}",
-                        BOLD, RED, task.id, RESET
+                        "{}{}No record found for task ID: {}{}{}",
+                        BOLD, RED, WHITE, task.id, RESET
                     );
                 }
             }
