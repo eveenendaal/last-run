@@ -34,7 +34,8 @@ pub fn format_duration_hundredths(duration: Duration) -> String {
     let seconds = total_milliseconds / 1000;
     let hundredths = (total_milliseconds % 1000) / 10;
 
-    format!("{}.{}s", seconds, hundredths)
+    // Format with leading zero for hundredths (always two digits)
+    format!("{}.{:02}s", seconds, hundredths)
 }
 
 /// Format a DateTime<Utc> to "%Y-%m-%d %H:%M:%S" in the local timezone
