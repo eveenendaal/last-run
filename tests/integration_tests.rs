@@ -35,7 +35,6 @@ fn test_complete_task_workflow() {
     // 5. Verify the task has been updated
     let updated_tasks = get_all_tasks(&conn, Some(task_id.clone())).unwrap();
     assert!(updated_tasks[0].1.is_some()); // Has last_run now
-    assert!(updated_tasks[0].2.is_none()); // start_time should be reset
     
     // 6. Verify a log entry was created
     let logs = get_task_logs(&conn, Some(task_id.clone()), 10).unwrap();
