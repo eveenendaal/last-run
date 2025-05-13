@@ -169,3 +169,17 @@ pub fn get_all_tasks(
 
     Ok(tasks)
 }
+
+pub fn clean_db(conn: &Connection) -> AppResult<()> {
+    conn.execute("DROP TABLE IF EXISTS tasks", [])?;
+    conn.execute(
+        "CREATE TABLE tasks (
+            id TEXT PRIMARY KEY,
+            last_run TEXT,
+            start_time TEXT,
+            elapsed_time INTEGER
+        )",
+        [],
+    )?;
+    Ok(())
+}

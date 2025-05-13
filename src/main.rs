@@ -146,6 +146,13 @@ fn main() -> AppResult<()> {
                 print_task_status(&tasks);
             }
         }
+
+        Commands::Clean {} => {
+            db::clean_db(&conn)?;
+            if !cli.quiet {
+                println!("{}{}Tasks table has been rebuilt.{}", BOLD, GREEN, RESET);
+            }
+        }
     }
 
     Ok(())

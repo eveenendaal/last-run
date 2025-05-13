@@ -65,6 +65,11 @@ pub enum Commands {
         #[arg(short, long)]
         id: Option<String>,
     },
+
+    /// Reset the tasks database
+    Clean {
+
+    }
 }
 
 pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String) {
