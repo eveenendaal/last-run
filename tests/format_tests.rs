@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{Duration, TimeZone, Utc};
 use lastrun::format::{format_datetime, format_duration, format_duration_hundredths, parse_duration};
 
 #[test]
