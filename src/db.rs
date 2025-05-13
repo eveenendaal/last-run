@@ -9,8 +9,7 @@ pub fn init_db(conn: &Connection) -> AppResult<()> {
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT,
-            elapsed_time INTEGER
+            start_time TEXT
         )",
         [],
     )?;
@@ -107,10 +106,9 @@ pub fn get_all_tasks(
         String,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
-        Option<i64>,
     )>,
 > {
-    let mut query = String::from("SELECT id, last_run, start_time, elapsed_time FROM tasks");
+    let mut query = String::from("SELECT id, last_run, start_time FROM tasks");
 
     if let Some(_) = &task_id {
         query.push_str(" WHERE id = ?");
@@ -125,12 +123,10 @@ pub fn get_all_tasks(
         String,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
-        Option<i64>,
     )> {
         let id: String = row.get(0)?;
         let last_run: Option<String> = row.get(1)?;
         let start_time: Option<String> = row.get(2)?;
-        let elapsed_time: Option<i64> = row.get(3)?;
 
         // Handle DateTime parsing safely to avoid error conversion issues
         let last_run = match last_run {
@@ -149,7 +145,7 @@ pub fn get_all_tasks(
             None => None,
         };
 
-        Ok((id, last_run, start_time, elapsed_time))
+        Ok((id, last_run, start_time))
     };
 
     let mut tasks = Vec::new();
@@ -176,10 +172,10 @@ pub fn clean_db(conn: &Connection) -> AppResult<()> {
         "CREATE TABLE tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT,
-            elapsed_time INTEGER
+            start_time TEXT
         )",
         [],
     )?;
     Ok(())
 }
+

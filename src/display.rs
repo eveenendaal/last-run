@@ -1,4 +1,4 @@
-use crate::format::{format_duration_hundredths, format_datetime};
+use crate::format::{format_duration_hundredths, format_datetime, format_duration};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
 
@@ -17,10 +17,10 @@ pub fn print_task_status(
         String,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
-        Option<i64>,
     )],
 ) {
     let mut table = Table::new();
+    let now = Utc::now();
 
     // Set table formatting
     table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
@@ -29,18 +29,18 @@ pub fn print_task_status(
     table.set_titles(Row::new(vec![
         Cell::new("TASK ID").style_spec(HEADER_COLOR),
         Cell::new("LAST RUN").style_spec(HEADER_COLOR),
+        Cell::new("TIME SINCE LAST RUN").style_spec(HEADER_COLOR),
         Cell::new("STARTED").style_spec(HEADER_COLOR),
         Cell::new("ELAPSED").style_spec(HEADER_COLOR),
     ]));
 
     if tasks.is_empty() {
         let empty_row = Row::new(vec![Cell::new("No tasks found")
-            .with_hspan(4)
+            .with_hspan(5)
             .style_spec("c")]);
         table.add_row(empty_row);
     } else {
-        for (id, last_run, start_time, elapsed_time) in tasks {
-            let now = Utc::now();
+        for (id, last_run, start_time) in tasks {
             let status_color = if start_time.is_some() && last_run.is_none() {
                 "Fy" // Yellow
             } else if let Some(lr) = last_run {
@@ -59,14 +59,33 @@ pub fn print_task_status(
                 "never".to_string()
             };
 
+            // Calculate time since last run
+            let time_since_last_run = if let Some(lr) = last_run {
+                format_duration(now.signed_duration_since(*lr))
+            } else {
+                "-".to_string()
+            };
+
             let start_time_str = if let Some(st) = start_time {
                 format_datetime(st)
             } else {
                 "-".to_string()
             };
 
-            let elapsed_str = if let Some(et) = elapsed_time {
-                format_duration_hundredths(Duration::milliseconds(*et))
+            // Calculate elapsed time since start
+            let elapsed_str = if let Some(st) = start_time {
+                if let Some(lr) = last_run {
+                    if *st < *lr {
+                        // Task has completed, show elapsed time from start to last_run
+                        format_duration_hundredths(lr.signed_duration_since(*st))
+                    } else {
+                        // Invalid state (start time after last run)
+                        "-".to_string()
+                    }
+                } else {
+                    // Task is still running, show elapsed time from start until now
+                    format_duration_hundredths(now.signed_duration_since(*st))
+                }
             } else {
                 "-".to_string()
             };
@@ -74,6 +93,7 @@ pub fn print_task_status(
             table.add_row(Row::new(vec![
                 Cell::new(id).style_spec(status_color),
                 Cell::new(&last_run_str).style_spec(status_color),
+                Cell::new(&time_since_last_run).style_spec(status_color),
                 Cell::new(&start_time_str).style_spec(status_color),
                 Cell::new(&elapsed_str).style_spec(status_color),
             ]));
@@ -117,4 +137,3 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
 
     table.printstd();
 }
-

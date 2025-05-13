@@ -36,17 +36,11 @@ impl Task {
             )?;
         }
 
-        // Update the elapsed_time if start_time and last_run are set
+        // Insert a record into the log table if start_time and last_run are set
         if let (Some(start_time), Some(last_run)) = (self.start_time, self.last_run) {
             let elapsed_time = last_run
                 .signed_duration_since(start_time)
                 .num_milliseconds();
-            conn.execute(
-                "UPDATE tasks SET elapsed_time = ? WHERE id = ?",
-                (elapsed_time, &self.id),
-            )?;
-
-            // Insert a record into the log table
             conn.execute(
                 "INSERT INTO task_log (id, end_time, elapsed_time) VALUES (?, ?, ?)",
                 (&self.id, &last_run.to_rfc3339(), elapsed_time),
