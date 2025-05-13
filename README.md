@@ -10,7 +10,7 @@ Last Run helps you manage recurring tasks by tracking when they were last execut
 
 ## Usage
 
-Last Run has several commands for tracking and monitoring tasks: `start`, `update` (or `done`), `check`, `status`, and `logs`.
+Last Run has several commands for tracking and monitoring tasks: `start`, `update` (or `done`), `check`, `status`, `logs`, and `reset`.
 
 ### Start a Task
 
@@ -113,7 +113,14 @@ Or using short options:
 lastrun logs -i my-task -l 50
 ```
 
+### Reset Database
+
+Reset the tasks database, rebuilding the tables:
+
+```bash
+lastrun reset
+```
+
 ### Quiet Mode
 
 Add the `-q` or `--quiet` flag to suppress output messages:
-

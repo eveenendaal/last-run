@@ -1,5 +1,5 @@
 use chrono::Utc;
-use lastrun::db::{get_all_tasks, get_task_logs, init_db};
+use lastrun::db::{get_all_tasks, get_task_logs, init_db, clean_db};
 use lastrun::model::Task;
 use rusqlite::Connection;
 
@@ -66,4 +66,36 @@ fn test_get_task_logs() {
 
     let logs = get_task_logs(&conn, Some("task1".to_string()), 10).unwrap();
     assert_eq!(logs.len(), 1);
+}
+
+#[test]
+fn test_reset_command() {
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // First, add some tasks
+    let task1 = Task::new("reset_test_1".to_string());
+    task1.insert(&conn).unwrap();
+    
+    let task2 = Task::new("reset_test_2".to_string());
+    task2.insert(&conn).unwrap();
+    
+    // Verify tasks were added
+    let tasks_before = get_all_tasks(&conn, None).unwrap();
+    assert_eq!(tasks_before.len(), 2);
+    
+    // Reset the database
+    clean_db(&conn).unwrap();
+    
+    // Verify the tasks table is now empty
+    let tasks_after = get_all_tasks(&conn, None).unwrap();
+    assert_eq!(tasks_after.len(), 0);
+    
+    // Verify we can still add new tasks after reset
+    let task3 = Task::new("post_reset_task".to_string());
+    task3.insert(&conn).unwrap();
+    
+    let final_tasks = get_all_tasks(&conn, None).unwrap();
+    assert_eq!(final_tasks.len(), 1);
+    assert_eq!(final_tasks[0].0, "post_reset_task");
 }

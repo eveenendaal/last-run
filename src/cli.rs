@@ -67,7 +67,7 @@ pub enum Commands {
     },
 
     /// Reset the tasks database
-    Clean {
+    Reset {
 
     }
 }
