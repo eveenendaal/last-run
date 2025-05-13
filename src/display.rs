@@ -21,17 +21,7 @@ pub fn print_task_status(
     let mut table = Table::new();
 
     // Set table formatting
-    table.set_format(
-        format::FormatBuilder::new()
-            .column_separator('|')
-            .borders('|')
-            .separators(
-                &[format::LinePosition::Top, format::LinePosition::Bottom],
-                format::LineSeparator::new('-', '+', '+', '+'),
-            )
-            .padding(1, 1)
-            .build(),
-    );
+    table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
 
     // Set title
     table.set_titles(Row::new(vec![
