@@ -1,4 +1,4 @@
-use crate::format::format_duration_hundredths;
+use crate::format::{format_duration_hundredths, format_datetime};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
 
@@ -54,13 +54,13 @@ pub fn print_task_status(
             };
 
             let last_run_str = if let Some(lr) = last_run {
-                format!("{}", lr.format("%Y-%m-%d %H:%M:%S"))
+                format_datetime(lr)
             } else {
                 "never".to_string()
             };
 
             let start_time_str = if let Some(st) = start_time {
-                format!("{}", st.format("%Y-%m-%d %H:%M:%S"))
+                format_datetime(st)
             } else {
                 "-".to_string()
             };
@@ -106,7 +106,7 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
         for (id, end_time, elapsed_time) in logs {
             table.add_row(Row::new(vec![
                 Cell::new(id).style_spec(TEXT_COLOR),
-                Cell::new(&end_time.format("%Y-%m-%d %H:%M:%S").to_string()).style_spec(TEXT_COLOR),
+                Cell::new(&format_datetime(end_time)).style_spec(TEXT_COLOR),
                 Cell::new(&format_duration_hundredths(Duration::milliseconds(
                     *elapsed_time,
                 )))
@@ -117,3 +117,4 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
 
     table.printstd();
 }
+

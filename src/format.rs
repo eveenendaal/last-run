@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{Duration, DateTime, Utc, Local};
 
 pub fn parse_duration(duration_str: &str) -> Result<Duration, String> {
     if let Some(hours_str) = duration_str.strip_suffix('h') {
@@ -36,3 +36,10 @@ pub fn format_duration_hundredths(duration: Duration) -> String {
 
     format!("{}.{}s", seconds, hundredths)
 }
+
+/// Format a DateTime<Utc> to "%Y-%m-%d %H:%M:%S" in the local timezone
+pub fn format_datetime(datetime: &DateTime<Utc>) -> String {
+    let local_datetime = datetime.with_timezone(&Local);
+    local_datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+

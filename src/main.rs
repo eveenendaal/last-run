@@ -10,7 +10,7 @@ use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
 use display::{print_task_logs, print_task_status, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
-use format::{format_duration_hundredths, parse_duration};
+use format::{format_duration_hundredths, parse_duration, format_datetime};
 use model::Task;
 use std::process;
 
@@ -54,7 +54,7 @@ fn main() -> AppResult<()> {
                     task.id,
                     GREEN,
                     WHITE,
-                    task.last_run.unwrap().to_rfc3339(),
+                    format_datetime(&task.last_run.unwrap()),
                     elapsed_msg,
                     RESET
                 );
@@ -82,7 +82,7 @@ fn main() -> AppResult<()> {
                     task.id,
                     GREEN,
                     WHITE,
-                    task.start_time.unwrap().to_rfc3339(),
+                    format_datetime(&task.start_time.unwrap()),
                     RESET
                 );
             }
