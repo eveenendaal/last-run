@@ -8,6 +8,7 @@ pub const RESET: &str = "\x1b[0m";
 pub const GREEN: &str = "\x1b[32m";
 pub const RED: &str = "\x1b[31m";
 pub const WHITE: &str = "\x1b[97m";
+pub const HEADER_COLOR: &str = "FG";
 
 /// Format and print task status
 pub fn print_task_status(
@@ -25,10 +26,10 @@ pub fn print_task_status(
 
     // Set title
     table.set_titles(Row::new(vec![
-        Cell::new("TASK ID").style_spec("Fb"),
-        Cell::new("LAST RUN").style_spec("Fb"),
-        Cell::new("STARTED").style_spec("Fb"),
-        Cell::new("ELAPSED").style_spec("Fb"),
+        Cell::new("TASK ID").style_spec(HEADER_COLOR),
+        Cell::new("LAST RUN").style_spec(HEADER_COLOR),
+        Cell::new("STARTED").style_spec(HEADER_COLOR),
+        Cell::new("ELAPSED").style_spec(HEADER_COLOR),
     ]));
 
     if tasks.is_empty() {
@@ -90,9 +91,9 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
 
     // Set title
     table.set_titles(Row::new(vec![
-        Cell::new("TASK ID").style_spec("Fb"),
-        Cell::new("COMPLETION TIME").style_spec("Fb"),
-        Cell::new("DURATION").style_spec("Fb"),
+        Cell::new("TASK ID").style_spec(HEADER_COLOR),
+        Cell::new("COMPLETION TIME").style_spec(HEADER_COLOR),
+        Cell::new("DURATION").style_spec(HEADER_COLOR),
     ]));
 
     if logs.is_empty() {
