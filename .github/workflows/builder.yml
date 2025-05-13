@@ -10,6 +10,7 @@ on:
       - 'Taskfile.yml'
       - 'Cargo.toml'
       - 'src/**/*.rs'
+      - 'tests/**/*.rs'
       - '.github/workflows/builder.yml'
 
   workflow_dispatch:

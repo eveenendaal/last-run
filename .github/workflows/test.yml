@@ -8,7 +8,8 @@ on:
       - 'Taskfile.yml'
       - 'Cargo.toml'
       - 'src/**/*.rs'
-      - '.github/workflows/builder.yml'
+      - 'tests/**/*.rs'
+      - '.github/workflows/test.yml'
 
 jobs:
   test:
