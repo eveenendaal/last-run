@@ -11,3 +11,5 @@ chrono = "0.4.26"
 clap = { version = "4.3.10", features = ["derive"] }
 dirs = "6.0.0"
 thiserror = "2.0.12"
+prettytable-rs = "0.10.0"
+
