@@ -179,3 +179,23 @@ pub fn clean_db(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Delete task logs for a specific task
+pub fn delete_task_logs(conn: &Connection, task_id: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute(
+        "DELETE FROM task_log WHERE id = ?",
+        [task_id],
+    )?;
+    
+    Ok(rows_affected)
+}
+
+/// Delete a task record
+pub fn delete_task(conn: &Connection, task_id: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        [task_id],
+    )?;
+    
+    Ok(rows_affected)
+}
+

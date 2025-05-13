@@ -99,3 +99,56 @@ fn test_reset_command() {
     assert_eq!(final_tasks.len(), 1);
     assert_eq!(final_tasks[0].0, "post_reset_task");
 }
+
+#[test]
+fn test_delete_command() {
+    use lastrun::db::{delete_task, delete_task_logs};
+    
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // Create a task
+    let mut task = Task::new("delete_test".to_string());
+    task.insert(&conn).unwrap();
+    
+    // Add a log entry by updating the task with start and end times
+    task.start_time = Some(Utc::now());
+    task.update(&conn).unwrap();  // This should create a start time
+    
+    // Wait a tiny bit to ensure time difference
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    
+    task.last_run = Some(Utc::now());
+    task.update(&conn).unwrap();  // This should create a log entry
+    
+    // Verify task and log exist
+    let tasks_before = get_all_tasks(&conn, Some("delete_test".to_string())).unwrap();
+    let logs_before = get_task_logs(&conn, Some("delete_test".to_string()), 10).unwrap();
+    
+    assert_eq!(tasks_before.len(), 1);
+    assert_eq!(logs_before.len(), 1);
+    
+    // Delete logs first
+    let logs_deleted = delete_task_logs(&conn, "delete_test").unwrap();
+    assert_eq!(logs_deleted, 1);
+    
+    // Verify logs are gone but task remains
+    let logs_after = get_task_logs(&conn, Some("delete_test".to_string()), 10).unwrap();
+    let tasks_after_log_delete = get_all_tasks(&conn, Some("delete_test".to_string())).unwrap();
+    
+    assert_eq!(logs_after.len(), 0);
+    assert_eq!(tasks_after_log_delete.len(), 1);
+    
+    // Now delete the task
+    let task_deleted = delete_task(&conn, "delete_test").unwrap();
+    assert_eq!(task_deleted, 1);
+    
+    // Verify task is gone
+    let tasks_after = get_all_tasks(&conn, Some("delete_test".to_string())).unwrap();
+    assert_eq!(tasks_after.len(), 0);
+    
+    // Test deleting non-existent task
+    let non_existent_deleted = delete_task(&conn, "non_existent_task").unwrap();
+    assert_eq!(non_existent_deleted, 0);
+}
+

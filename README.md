@@ -121,6 +121,24 @@ Reset the tasks database, rebuilding the tables:
 lastrun reset
 ```
 
+### Delete Task Records
+
+Delete a task and all its log entries:
+
+```bash
+lastrun delete --id my-task
+```
+
+Or using the short option:
+```bash
+lastrun delete -i my-task
+```
+
 ### Quiet Mode
 
 Add the `-q` or `--quiet` flag to suppress output messages:
+
+```bash
+lastrun start --id my-task -q
+```
+`

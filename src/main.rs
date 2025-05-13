@@ -153,7 +153,34 @@ fn main() -> AppResult<()> {
                 println!("{}{}Tasks table has been rebuilt.{}", BOLD, GREEN, RESET);
             }
         }
+        
+        Commands::Delete { id } => {
+            if id.is_empty() {
+                return Err(AppError::MissingTaskId);
+            }
+            
+            // Delete logs for the given task ID
+            let logs_deleted = db::delete_task_logs(&conn, &id)?;
+            
+            // Delete the task record
+            let task_deleted = db::delete_task(&conn, &id)?;
+            
+            if !cli.quiet {
+                if task_deleted > 0 {
+                    println!(
+                        "{}{}Task {}{}{} deleted. {} log entries removed.{}",
+                        BOLD, GREEN, WHITE, id, GREEN, logs_deleted, RESET
+                    );
+                } else {
+                    println!(
+                        "{}{}No task found with ID: {}{}{}. {} log entries removed.{}",
+                        BOLD, RED, WHITE, id, RED, logs_deleted, RESET
+                    );
+                }
+            }
+        }
     }
 
     Ok(())
 }
+

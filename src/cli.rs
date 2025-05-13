@@ -69,6 +69,13 @@ pub enum Commands {
     /// Reset the tasks database
     Reset {
 
+    },
+    
+    /// Delete a task and its log records by ID
+    Delete {
+        /// Task ID to delete
+        #[arg(short, long)]
+        id: String,
     }
 }
 
