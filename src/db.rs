@@ -4,15 +4,7 @@ use dirs::home_dir;
 use rusqlite::Connection;
 use std::fs;
 
-pub fn init_db() -> AppResult<Connection> {
-    let home = home_dir().ok_or(AppError::HomeDirectoryNotFound)?;
-    let db_dir = home.join(".tasks");
-
-    fs::create_dir_all(&db_dir)?;
-
-    let db_path = db_dir.join("data.db");
-    let conn = Connection::open(db_path)?;
-
+pub fn init_db(conn: &Connection) -> AppResult<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
@@ -32,6 +24,18 @@ pub fn init_db() -> AppResult<Connection> {
         )",
         [],
     )?;
+
+    Ok(())
+}
+
+pub fn get_file_based_connection() -> AppResult<Connection> {
+    let home = home_dir().ok_or(AppError::HomeDirectoryNotFound)?;
+    let db_dir = home.join(".tasks");
+
+    fs::create_dir_all(&db_dir)?;
+
+    let db_path = db_dir.join("data.db");
+    let conn = Connection::open(db_path)?;
 
     Ok(conn)
 }

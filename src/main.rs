@@ -17,7 +17,8 @@ use std::process;
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
-    let conn = db::init_db()?;
+    let conn = db::get_file_based_connection()?;
+    db::init_db(&conn)?; // Pass the connection to initialize the schema
 
     match cli.command {
         Commands::Update { id } | Commands::Done { id } => {
