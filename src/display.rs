@@ -9,6 +9,7 @@ pub const GREEN: &str = "\x1b[32m";
 pub const RED: &str = "\x1b[31m";
 pub const WHITE: &str = "\x1b[97m";
 pub const HEADER_COLOR: &str = "FG";
+pub const TEXT_COLOR: &str = "FW";
 
 /// Format and print task status
 pub fn print_task_status(
@@ -46,7 +47,7 @@ pub fn print_task_status(
                 if now.signed_duration_since(*lr) > Duration::days(1) {
                     "Fr" // Red
                 } else {
-                    "FW" // White
+                    TEXT_COLOR // White
                 }
             } else {
                 "Fb" // Blue
@@ -104,12 +105,12 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     } else {
         for (id, end_time, elapsed_time) in logs {
             table.add_row(Row::new(vec![
-                Cell::new(id).style_spec("FW"),
-                Cell::new(&end_time.format("%Y-%m-%d %H:%M:%S").to_string()).style_spec("FW"),
+                Cell::new(id).style_spec(TEXT_COLOR),
+                Cell::new(&end_time.format("%Y-%m-%d %H:%M:%S").to_string()).style_spec(TEXT_COLOR),
                 Cell::new(&format_duration_hundredths(Duration::milliseconds(
                     *elapsed_time,
                 )))
-                .style_spec("FW"),
+                .style_spec(TEXT_COLOR),
             ]));
         }
     }
