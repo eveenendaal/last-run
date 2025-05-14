@@ -66,7 +66,7 @@ pub enum Commands {
         id: Option<String>,
 
         /// Continuously monitor the status
-        #[arg(long)]
+        #[arg(short, long)]
         watch: bool,
     },
 
