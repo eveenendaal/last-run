@@ -9,7 +9,8 @@ pub fn init_db(conn: &Connection) -> AppResult<()> {
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT
+            start_time TEXT,
+            duration INTEGER
         )",
         [],
     )?;
@@ -23,6 +24,10 @@ pub fn init_db(conn: &Connection) -> AppResult<()> {
         )",
         [],
     )?;
+
+    // Ensure the `duration` column exists in the `tasks` table
+    conn.execute("ALTER TABLE tasks ADD COLUMN duration INTEGER", [])
+        .ok();
 
     Ok(())
 }
@@ -101,14 +106,8 @@ pub fn get_task_logs(
 pub fn get_all_tasks(
     conn: &Connection,
     task_id: Option<String>,
-) -> AppResult<
-    Vec<(
-        String,
-        Option<DateTime<Utc>>,
-        Option<DateTime<Utc>>,
-    )>,
-> {
-    let mut query = String::from("SELECT id, last_run, start_time FROM tasks");
+) -> AppResult<Vec<(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)>> {
+    let mut query = String::from("SELECT id, last_run, start_time, duration FROM tasks");
 
     if let Some(_) = &task_id {
         query.push_str(" WHERE id = ?");
@@ -123,10 +122,12 @@ pub fn get_all_tasks(
         String,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
+        Option<i64>,
     )> {
         let id: String = row.get(0)?;
         let last_run: Option<String> = row.get(1)?;
         let start_time: Option<String> = row.get(2)?;
+        let duration: Option<i64> = row.get(3)?;
 
         // Handle DateTime parsing safely to avoid error conversion issues
         let last_run = match last_run {
@@ -145,7 +146,7 @@ pub fn get_all_tasks(
             None => None,
         };
 
-        Ok((id, last_run, start_time))
+        Ok((id, last_run, start_time, duration))
     };
 
     let mut tasks = Vec::new();
@@ -172,7 +173,8 @@ pub fn clean_db(conn: &Connection) -> AppResult<()> {
         "CREATE TABLE tasks (
             id TEXT PRIMARY KEY,
             last_run TEXT,
-            start_time TEXT
+            start_time TEXT,
+            duration INTEGER
         )",
         [],
     )?;
@@ -181,21 +183,22 @@ pub fn clean_db(conn: &Connection) -> AppResult<()> {
 
 /// Delete task logs for a specific task
 pub fn delete_task_logs(conn: &Connection, task_id: &str) -> AppResult<usize> {
-    let rows_affected = conn.execute(
-        "DELETE FROM task_log WHERE id = ?",
-        [task_id],
-    )?;
-    
+    let rows_affected = conn.execute("DELETE FROM task_log WHERE id = ?", [task_id])?;
+
     Ok(rows_affected)
 }
 
 /// Delete a task record
 pub fn delete_task(conn: &Connection, task_id: &str) -> AppResult<usize> {
-    let rows_affected = conn.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        [task_id],
-    )?;
-    
+    let rows_affected = conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])?;
+
     Ok(rows_affected)
 }
 
+pub fn update_task_duration(conn: &Connection, id: &str, duration: i64) -> AppResult<()> {
+    conn.execute(
+        "UPDATE tasks SET duration = ? WHERE id = ?",
+        rusqlite::params![duration, id], // Use `rusqlite::params!` to handle mixed types
+    )?;
+    Ok(())
+}

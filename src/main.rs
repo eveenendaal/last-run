@@ -8,6 +8,7 @@ mod model;
 use chrono::Utc;
 use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
+use db::update_task_duration;
 use display::{print_task_logs, print_task_status, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration_hundredths, parse_duration};
@@ -112,6 +113,9 @@ fn main() -> AppResult<()> {
                             RESET
                         );
                     }
+
+                    // Store the duration in the database
+                    update_task_duration(&conn, &task.id, duration.num_seconds())?;
 
                     if should_run {
                         process::exit(1);

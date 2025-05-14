@@ -12,7 +12,7 @@ pub const HEADER_COLOR: &str = "FG";
 pub const TEXT_COLOR: &str = "FW";
 
 /// Format and print task status
-pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>)]) {
+pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)]) {
     let mut table = Table::new();
     let now = Utc::now();
 
@@ -26,15 +26,16 @@ pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTim
         Cell::new("TIME SINCE LAST RUN").style_spec(HEADER_COLOR),
         Cell::new("STARTED").style_spec(HEADER_COLOR),
         Cell::new("ELAPSED").style_spec(HEADER_COLOR),
+        Cell::new("DURATION").style_spec(HEADER_COLOR),
     ]));
 
     if tasks.is_empty() {
         let empty_row = Row::new(vec![Cell::new("No tasks found")
-            .with_hspan(5)
+            .with_hspan(6)
             .style_spec("c")]);
         table.add_row(empty_row);
     } else {
-        for (id, last_run, start_time) in tasks {
+        for (id, last_run, start_time, duration) in tasks {
             let status_color = if start_time.is_some() && last_run.is_none() {
                 "Fy" // Yellow
             } else if let Some(lr) = last_run {
@@ -84,12 +85,19 @@ pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTim
                 "-".to_string()
             };
 
+            let duration_str = if let Some(d) = duration {
+                format_duration(Duration::seconds(*d))
+            } else {
+                "-".to_string()
+            };
+
             table.add_row(Row::new(vec![
                 Cell::new(id).style_spec(status_color),
                 Cell::new(&last_run_str).style_spec(status_color),
                 Cell::new(&time_since_last_run).style_spec(status_color),
                 Cell::new(&start_time_str).style_spec(status_color),
                 Cell::new(&elapsed_str).style_spec(status_color),
+                Cell::new(&duration_str).style_spec(status_color),
             ]));
         }
     }
