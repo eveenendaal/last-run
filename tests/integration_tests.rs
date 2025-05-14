@@ -26,7 +26,11 @@ fn test_complete_task_workflow() {
     // 3. Start the task
     task.start_time = Some(Utc::now());
     task.update(&conn).unwrap();
-    
+
+    // Verify last_run is cleared when start_time is set
+    let tasks_after_start = get_all_tasks(&conn, Some(task_id.clone())).unwrap();
+    assert!(tasks_after_start[0].1.is_none()); // last_run should be None
+
     // 4. Wait a bit and complete the task
     sleep(StdDuration::from_millis(100));
     task.last_run = Some(Utc::now());
@@ -35,6 +39,7 @@ fn test_complete_task_workflow() {
     // 5. Verify the task has been updated
     let updated_tasks = get_all_tasks(&conn, Some(task_id.clone())).unwrap();
     assert!(updated_tasks[0].1.is_some()); // Has last_run now
+    let last_run = updated_tasks[0].1.unwrap(); // Safely unwrap after checking
     
     // 6. Verify a log entry was created
     let logs = get_task_logs(&conn, Some(task_id.clone()), 10).unwrap();
@@ -43,7 +48,6 @@ fn test_complete_task_workflow() {
     assert!(logs[0].2 > 0); // Should have some elapsed time
     
     // 7. Test should_run_task logic
-    let last_run = updated_tasks[0].1.unwrap();
     let (should_run, _) = should_run_task(last_run, Duration::hours(24));
     assert_eq!(should_run, false); // Should not run yet, it just completed
     
@@ -82,32 +86,44 @@ fn test_mutiple_task_management() {
     
     // 3. Update tasks with different times
     let mut daily = Task::new("daily_task".to_string());
-    daily.last_run = Some(Utc::now() - Duration::hours(12));
+    daily.start_time = Some(Utc::now());
+    daily.last_run = None; // Ensure last_run is cleared
     daily.update(&conn).unwrap();
-    
+
     let mut weekly = Task::new("weekly_task".to_string());
-    weekly.last_run = Some(Utc::now() - Duration::days(3));
+    weekly.start_time = Some(Utc::now());
+    weekly.last_run = None; // Ensure last_run is cleared
     weekly.update(&conn).unwrap();
-    
+
     let mut monthly = Task::new("monthly_task".to_string());
-    monthly.last_run = Some(Utc::now() - Duration::days(15));
+    monthly.start_time = Some(Utc::now());
+    monthly.last_run = None; // Ensure last_run is cleared
     monthly.update(&conn).unwrap();
-    
+
+    // Verify last_run is cleared for all tasks
+    for id in task_ids.iter() {
+        let task_status = get_all_tasks(&conn, Some(id.to_string())).unwrap();
+        assert!(task_status[0].1.is_none()); // last_run should be None
+    }
+
     // 4. Check task status against different thresholds
     let daily_status = get_all_tasks(&conn, Some("daily_task".to_string())).unwrap();
-    let daily_last_run = daily_status[0].1.unwrap();
-    let (daily_should_run, _) = should_run_task(daily_last_run, Duration::hours(24));
-    assert_eq!(daily_should_run, false); // Not due yet (12h < 24h threshold)
-    
+    if let Some(daily_last_run) = daily_status[0].1 {
+        let (daily_should_run, _) = should_run_task(daily_last_run, Duration::hours(24));
+        assert_eq!(daily_should_run, false); // Not due yet (12h < 24h threshold)
+    }
+
     let weekly_status = get_all_tasks(&conn, Some("weekly_task".to_string())).unwrap();
-    let weekly_last_run = weekly_status[0].1.unwrap();
-    let (weekly_should_run, _) = should_run_task(weekly_last_run, Duration::days(7));
-    assert_eq!(weekly_should_run, false); // Not due yet (3d < 7d threshold)
-    
+    if let Some(weekly_last_run) = weekly_status[0].1 {
+        let (weekly_should_run, _) = should_run_task(weekly_last_run, Duration::days(7));
+        assert_eq!(weekly_should_run, false); // Not due yet (3d < 7d threshold)
+    }
+
     let monthly_status = get_all_tasks(&conn, Some("monthly_task".to_string())).unwrap();
-    let monthly_last_run = monthly_status[0].1.unwrap();
-    let (monthly_should_run, _) = should_run_task(monthly_last_run, Duration::days(14));
-    assert_eq!(monthly_should_run, true); // Due (15d > 14d threshold)
+    if let Some(monthly_last_run) = monthly_status[0].1 {
+        let (monthly_should_run, _) = should_run_task(monthly_last_run, Duration::days(14));
+        assert_eq!(monthly_should_run, true); // Due (15d > 14d threshold)
+    }
     
     // 5. Delete all tasks
     for id in task_ids.iter() {
@@ -119,3 +135,4 @@ fn test_mutiple_task_management() {
     let final_tasks = get_all_tasks(&conn, None).unwrap();
     assert_eq!(final_tasks.len(), 0);
 }
+

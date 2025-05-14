@@ -26,6 +26,9 @@ impl Task {
                 "UPDATE tasks SET last_run = ? WHERE id = ?",
                 (&last_run.to_rfc3339(), &self.id),
             )?;
+        } else {
+            // Clear last_run if not set
+            conn.execute("UPDATE tasks SET last_run = NULL WHERE id = ?", [&self.id])?;
         }
 
         // Update the start_time if set
@@ -101,8 +104,9 @@ impl Task {
 
     pub fn start(&mut self, conn: &Connection) -> AppResult<()> {
         self.start_time = Some(Utc::now()); // Set the start time
+        self.last_run = None; // Clear last_run when starting
         conn.execute(
-            "UPDATE tasks SET start_time = ? WHERE id = ?",
+            "UPDATE tasks SET start_time = ?, last_run = NULL WHERE id = ?",
             (&self.start_time.unwrap().to_rfc3339(), &self.id),
         )?;
         Ok(())
