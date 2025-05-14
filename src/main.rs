@@ -144,7 +144,7 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Status { id, watch } => {
-            let interval = Duration::from_secs(5); // Set the interval to 5 seconds
+            let interval = Duration::from_secs(1); // Set the interval to 1 second
             loop {
                 if watch {
                     // Clear the terminal
