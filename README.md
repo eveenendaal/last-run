@@ -88,18 +88,16 @@ Or using the short option:
 lastrun status -i my-task
 ```
 
-### View Task Logs
-
-Display execution logs for all tasks:
+To continuously monitor the status, use the `--watch` option. This will refresh the status every 5 seconds:
 
 ```bash
-lastrun logs
+lastrun status --watch
 ```
 
-To filter by a specific task ID:
+You can combine it with a specific task ID:
 
 ```bash
-lastrun logs --id my-task
+lastrun status --id my-task --watch
 ```
 
 To change the number of logs displayed (default is 20):

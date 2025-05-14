@@ -10,9 +10,11 @@ use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
 use display::{print_task_logs, print_task_status, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
-use format::{format_duration_hundredths, parse_duration, format_datetime};
+use format::{format_datetime, format_duration_hundredths, parse_duration};
 use model::Task;
+use std::io::{self, Write};
 use std::process;
+use std::{thread, time::Duration};
 
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
@@ -141,11 +143,26 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Status { id } => {
-            let tasks = db::get_all_tasks(&conn, id)?;
+        Commands::Status { id, watch } => {
+            let interval = Duration::from_secs(5); // Set the interval to 5 seconds
+            loop {
+                if watch {
+                    // Clear the terminal
+                    print!("\x1B[2J\x1B[H");
+                    io::stdout().flush().unwrap();
+                }
 
-            if !cli.quiet {
-                print_task_status(&tasks);
+                let tasks = db::get_all_tasks(&conn, id.as_ref().cloned())?;
+
+                if !cli.quiet {
+                    print_task_status(&tasks);
+                }
+
+                if !watch {
+                    break;
+                }
+
+                thread::sleep(interval);
             }
         }
 
@@ -155,18 +172,18 @@ fn main() -> AppResult<()> {
                 println!("{}{}Tasks table has been rebuilt.{}", BOLD, GREEN, RESET);
             }
         }
-        
+
         Commands::Delete { id } => {
             if id.is_empty() {
                 return Err(AppError::MissingTaskId);
             }
-            
+
             // Delete logs for the given task ID
             let logs_deleted = db::delete_task_logs(&conn, &id)?;
-            
+
             // Delete the task record
             let task_deleted = db::delete_task(&conn, &id)?;
-            
+
             if !cli.quiet {
                 if task_deleted > 0 {
                     println!(
@@ -185,4 +202,3 @@ fn main() -> AppResult<()> {
 
     Ok(())
 }
-

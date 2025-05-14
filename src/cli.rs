@@ -64,6 +64,10 @@ pub enum Commands {
         /// Filter tasks by ID
         #[arg(short, long)]
         id: Option<String>,
+
+        /// Continuously monitor the status
+        #[arg(long)]
+        watch: bool,
     },
 
     /// Reset the tasks database
@@ -103,3 +107,4 @@ pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, St
         )
     }
 }
+
