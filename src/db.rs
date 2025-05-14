@@ -48,7 +48,7 @@ pub fn get_task_logs(
     let mut query = String::from("SELECT id, end_time, elapsed_time FROM task_log");
 
     if let Some(_) = &task_id {
-        query.push_str(" WHERE id = ?");
+        query.push_str(" WHERE id = ?"); // Added filtering by task ID
     }
 
     query.push_str(" ORDER BY end_time DESC");
@@ -83,12 +83,12 @@ pub fn get_task_logs(
 
     // Use the mapping function with params
     if let Some(id) = task_id {
-        let rows = stmt.query_map([id], map_log_row)?;
+        let rows = stmt.query_map([id], map_log_row)?; // Pass task ID as parameter
         for row in rows {
             logs.push(row?);
         }
     } else {
-        let rows = stmt.query_map([], map_log_row)?;
+        let rows = stmt.query_map([], map_log_row)?; // No filtering
         for row in rows {
             logs.push(row?);
         }

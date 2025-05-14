@@ -136,7 +136,7 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Logs { limit, id } => {
-            let logs = db::get_task_logs(&conn, id, limit)?;
+            let logs = db::get_task_logs(&conn, id, limit)?; // Pass task ID filter
 
             if !cli.quiet {
                 print_task_logs(&logs);
