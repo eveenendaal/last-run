@@ -71,16 +71,14 @@ pub enum Commands {
     },
 
     /// Reset the tasks database
-    Reset {
+    Reset {},
 
-    },
-    
     /// Delete a task and its log records by ID
     Delete {
         /// Task ID to delete
         #[arg(short, long)]
         id: String,
-    }
+    },
 }
 
 pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String) {
@@ -107,4 +105,3 @@ pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, St
         )
     }
 }
-

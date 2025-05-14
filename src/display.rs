@@ -1,4 +1,4 @@
-use crate::format::{format_duration_hundredths, format_datetime, format_duration};
+use crate::format::{format_datetime, format_duration, format_duration_hundredths};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
 
@@ -12,13 +12,7 @@ pub const HEADER_COLOR: &str = "FG";
 pub const TEXT_COLOR: &str = "FW";
 
 /// Format and print task status
-pub fn print_task_status(
-    tasks: &[(
-        String,
-        Option<DateTime<Utc>>,
-        Option<DateTime<Utc>>,
-    )],
-) {
+pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>)]) {
     let mut table = Table::new();
     let now = Utc::now();
 
