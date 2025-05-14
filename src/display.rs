@@ -39,8 +39,15 @@ pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTim
             let status_color = if start_time.is_some() && last_run.is_none() {
                 "Fy" // Yellow
             } else if let Some(lr) = last_run {
-                if now.signed_duration_since(*lr) > Duration::days(1) {
-                    "Fr" // Red
+                let time_since_last = now.signed_duration_since(*lr);
+                
+                // Only show in red if duration is set and time since last run exceeds that duration
+                if let Some(d) = duration {
+                    if time_since_last > Duration::seconds(*d) {
+                        "Fr" // Red
+                    } else {
+                        TEXT_COLOR // White
+                    }
                 } else {
                     TEXT_COLOR // White
                 }
