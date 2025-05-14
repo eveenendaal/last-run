@@ -36,6 +36,7 @@ fn main() -> AppResult<()> {
                     let elapsed = Utc::now().signed_duration_since(start_time);
                     elapsed_time = Some(format_duration_hundredths(elapsed));
                 }
+                task.last_run = Some(Utc::now()); // Set last_run
                 task.update(&conn)?;
             }
 
@@ -68,6 +69,7 @@ fn main() -> AppResult<()> {
 
             let mut task = Task::new(id);
             task.start_time = Some(Utc::now());
+            task.last_run = None; // Clear last_run when setting start_time
             if let Some(existing_task) = task.select(&conn, cli.quiet)? {
                 task.start_time = existing_task.start_time; // Preserve the existing start time if any
             }
