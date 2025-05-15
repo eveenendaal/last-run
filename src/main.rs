@@ -148,11 +148,18 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Status { id, watch } => {
-            let interval = Duration::from_millis(250); // 250ms interval
+            let interval = Duration::from_millis(100);
+            let mut first = true;
             loop {
                 if watch {
-                    // Clear the terminal
-                    print!("\x1B[2J\x1B[H");
+                    if first {
+                        // On the first draw, clear the screen
+                        print!("\x1B[2J\x1B[H");
+                        first = false;
+                    } else {
+                        // On subsequent draws, just move the cursor to the top left
+                        print!("\x1B[H");
+                    }
                     io::stdout().flush().unwrap();
                 }
 
