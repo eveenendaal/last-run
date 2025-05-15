@@ -1,4 +1,4 @@
-use crate::format::{format_datetime, format_duration, format_duration_hundredths};
+use crate::format::{format_datetime, format_duration};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
 
@@ -79,14 +79,16 @@ pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTim
                 if let Some(lr) = last_run {
                     if *st < *lr {
                         // Task has completed, show elapsed time from start to last_run
-                        format_duration_hundredths(lr.signed_duration_since(*st))
+                        let elapsed = lr.signed_duration_since(*st);
+                        format_duration(elapsed)
                     } else {
                         // Invalid state (start time after last run)
                         "-".to_string()
                     }
                 } else {
                     // Task is still running, show elapsed time from start until now
-                    format_duration_hundredths(now.signed_duration_since(*st))
+                    let elapsed = now.signed_duration_since(*st);
+                    format_duration(elapsed)
                 }
             } else {
                 "-".to_string()
@@ -133,16 +135,16 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
         table.add_row(empty_row);
     } else {
         for (id, end_time, elapsed_time) in logs {
+            let duration = Duration::milliseconds(*elapsed_time);
+            let duration_str = format_duration(duration);
             table.add_row(Row::new(vec![
                 Cell::new(id).style_spec(TEXT_COLOR),
                 Cell::new(&format_datetime(end_time)).style_spec(TEXT_COLOR),
-                Cell::new(&format_duration_hundredths(Duration::milliseconds(
-                    *elapsed_time,
-                )))
-                .style_spec(TEXT_COLOR),
+                Cell::new(&duration_str).style_spec(TEXT_COLOR),
             ]));
         }
     }
 
     table.printstd();
 }
+

@@ -21,7 +21,7 @@ fn test_should_run_task() {
     
     assert_eq!(should_run, true);
     assert!(message.contains("Task is due"));
-    assert!(message.contains("1d6h0m"));
+    assert!(message.contains("1d6h"));
     
     // Test case: Task ran exactly at threshold
     let threshold_run = now - Duration::hours(24);

@@ -1,5 +1,5 @@
 use chrono::{Duration, TimeZone, Utc};
-use lastrun::format::{format_datetime, format_duration, format_duration_hundredths, parse_duration};
+use lastrun::format::{format_datetime, format_duration, parse_duration};
 
 #[test]
 fn test_parse_duration() {
@@ -23,23 +23,20 @@ fn test_parse_duration() {
 #[test]
 fn test_format_duration() {
     // Test various duration formats
-    assert_eq!(format_duration(Duration::minutes(5)), "5m");
+    assert_eq!(format_duration(Duration::minutes(5)), "5m0s");
     assert_eq!(format_duration(Duration::minutes(65)), "1h5m");
     assert_eq!(format_duration(Duration::hours(5)), "5h0m");
-    assert_eq!(format_duration(Duration::hours(25)), "1d1h0m");
-    assert_eq!(format_duration(Duration::days(1)), "1d0h0m");
-    assert_eq!(format_duration(Duration::days(2) + Duration::hours(12) + Duration::minutes(30)), "2d12h30m");
-}
+    assert_eq!(format_duration(Duration::hours(25)), "1d1h");
+    assert_eq!(format_duration(Duration::days(1)), "1d0h");
+    assert_eq!(format_duration(Duration::days(2) + Duration::hours(12) + Duration::minutes(30)), "2d12h");
 
-#[test]
-fn test_format_duration_hundredths() {
-    // Test various duration formats with hundredths
-    assert_eq!(format_duration_hundredths(Duration::milliseconds(1500)), "1.50s");
-    assert_eq!(format_duration_hundredths(Duration::milliseconds(500)), "0.50s");
-    assert_eq!(format_duration_hundredths(Duration::milliseconds(10)), "0.01s");
-    assert_eq!(format_duration_hundredths(Duration::milliseconds(1)), "0.00s");
-    assert_eq!(format_duration_hundredths(Duration::seconds(5) + Duration::milliseconds(250)), "5.25s");
-    assert_eq!(format_duration_hundredths(Duration::seconds(60) + Duration::milliseconds(750)), "60.75s");
+    // New: test seconds to hundredths
+    assert_eq!(format_duration(Duration::milliseconds(1500)), "1.50s");
+    assert_eq!(format_duration(Duration::milliseconds(500)), "0.50s");
+    assert_eq!(format_duration(Duration::milliseconds(10)), "0.01s");
+    assert_eq!(format_duration(Duration::milliseconds(1)), "0.00s");
+    assert_eq!(format_duration(Duration::seconds(5) + Duration::milliseconds(250)), "5.25s");
+    assert_eq!(format_duration(Duration::seconds(60) + Duration::milliseconds(750)), "1m0s");
 }
 
 #[test]

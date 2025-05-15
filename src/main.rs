@@ -11,7 +11,7 @@ use cli::{should_run_task, Cli, Commands};
 use db::update_task_duration;
 use display::{print_task_logs, print_task_status, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
-use format::{format_datetime, format_duration_hundredths, parse_duration};
+use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
 use std::io::{self, Write};
 use std::process;
@@ -37,7 +37,7 @@ fn main() -> AppResult<()> {
                 task.start_time = existing_task.start_time; // Preserve the existing start_time
                 if let Some(start_time) = task.start_time {
                     let elapsed = Utc::now().signed_duration_since(start_time);
-                    elapsed_time = Some(format_duration_hundredths(elapsed));
+                    elapsed_time = Some(format_duration(elapsed));
                 }
                 task.last_run = Some(Utc::now()); // Set last_run
                 task.update(&conn)?;

@@ -15,27 +15,33 @@ pub fn parse_duration(duration_str: &str) -> Result<Duration, String> {
 }
 
 pub fn format_duration(duration: Duration) -> String {
-    let total_minutes = duration.num_minutes();
-    let days = total_minutes / (24 * 60);
-    let hours = (total_minutes % (24 * 60)) / 60;
-    let minutes = total_minutes % 60;
+    let total_seconds = duration.num_seconds().abs();
+    let sign = if duration.num_seconds() < 0 { "-" } else { "" };
 
-    if days > 0 {
-        format!("{}d{}h{}m", days, hours, minutes)
-    } else if hours > 0 {
-        format!("{}h{}m", hours, minutes)
+    if total_seconds < 60 {
+        // Show seconds to hundredths
+        let total_milliseconds = duration.num_milliseconds().abs();
+        let seconds = total_milliseconds / 1000;
+        let hundredths = (total_milliseconds % 1000) / 10;
+        format!("{}{:.0}.{:02}s", sign, seconds, hundredths)
+    } else if total_seconds < 3600 {
+        // Show XmYs
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        format!("{}{}m{}s", sign, minutes, seconds)
     } else {
-        format!("{}m", minutes)
+        let total_minutes = total_seconds / 60;
+        let days = total_minutes / (24 * 60);
+        let hours = (total_minutes % (24 * 60)) / 60;
+        let minutes = total_minutes % 60;
+
+        if days > 0 {
+            // If more than a day, don't show minutes
+            format!("{}{}d{}h", sign, days, hours)
+        } else {
+            format!("{}{}h{}m", sign, hours, minutes)
+        }
     }
-}
-
-pub fn format_duration_hundredths(duration: Duration) -> String {
-    let total_milliseconds = duration.num_milliseconds();
-    let seconds = total_milliseconds / 1000;
-    let hundredths = (total_milliseconds % 1000) / 10;
-
-    // Format with leading zero for hundredths (always two digits)
-    format!("{}.{:02}s", seconds, hundredths)
 }
 
 /// Format a DateTime<Utc> to "%Y-%m-%d %H:%M:%S" in the local timezone
@@ -43,4 +49,3 @@ pub fn format_datetime(datetime: &DateTime<Utc>) -> String {
     let local_datetime = datetime.with_timezone(&Local);
     local_datetime.format("%Y-%m-%d %H:%M:%S").to_string()
 }
-
