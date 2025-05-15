@@ -147,7 +147,7 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Status { id, watch } => {
+        Commands::Status { id, watch, sort } => {
             let interval = Duration::from_millis(100);
             let mut first = true;
             loop {
@@ -166,7 +166,7 @@ fn main() -> AppResult<()> {
                 let tasks = db::get_all_tasks(&conn, id.as_ref().cloned())?;
 
                 if !cli.quiet {
-                    print_task_status(&tasks);
+                    print_task_status(&tasks, &sort);
                 }
 
                 if !watch {

@@ -68,6 +68,10 @@ pub enum Commands {
         /// Continuously monitor the status
         #[arg(short, long)]
         watch: bool,
+
+        /// Column to sort by (id, last_run, time_since_last_run, started, elapsed, duration)
+        #[arg(short, long, default_value = "id")]
+        sort: String,
     },
 
     /// Reset the tasks database
@@ -105,3 +109,4 @@ pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, St
         )
     }
 }
+

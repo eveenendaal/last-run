@@ -12,7 +12,40 @@ pub const HEADER_COLOR: &str = "FG";
 pub const TEXT_COLOR: &str = "FW";
 
 /// Format and print task status
-pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)]) {
+pub fn print_task_status(
+    tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)],
+    sort_by: &str,
+) {
+    let mut tasks = tasks.to_vec();
+    let now = Utc::now();
+
+    // Sort tasks based on the sort_by parameter
+    match sort_by {
+        "id" => tasks.sort_by(|a, b| a.0.cmp(&b.0)),
+        "last_run" => tasks.sort_by(|a, b| a.1.cmp(&b.1)),
+        "time_since_last_run" => tasks.sort_by(|a, b| {
+            let a_val = a.1.map(|lr| now.signed_duration_since(lr)).unwrap_or(chrono::Duration::MAX);
+            let b_val = b.1.map(|lr| now.signed_duration_since(lr)).unwrap_or(chrono::Duration::MAX);
+            a_val.cmp(&b_val)
+        }),
+        "started" => tasks.sort_by(|a, b| a.2.cmp(&b.2)),
+        "elapsed" => tasks.sort_by(|a, b| {
+            let a_val = match (a.2, a.1) {
+                (Some(st), Some(lr)) if st < lr => lr.signed_duration_since(st),
+                (Some(st), None) => now.signed_duration_since(st),
+                _ => chrono::Duration::zero(),
+            };
+            let b_val = match (b.2, b.1) {
+                (Some(st), Some(lr)) if st < lr => lr.signed_duration_since(st),
+                (Some(st), None) => now.signed_duration_since(st),
+                _ => chrono::Duration::zero(),
+            };
+            a_val.cmp(&b_val)
+        }),
+        "duration" => tasks.sort_by(|a, b| a.3.cmp(&b.3)),
+        _ => {} // Default: no sorting
+    }
+
     let mut table = Table::new();
     let now = Utc::now();
 
@@ -35,7 +68,7 @@ pub fn print_task_status(tasks: &[(String, Option<DateTime<Utc>>, Option<DateTim
             .style_spec("c")]);
         table.add_row(empty_row);
     } else {
-        for (id, last_run, start_time, duration) in tasks {
+        for (id, last_run, start_time, duration) in &tasks {
             let status_color = if start_time.is_some() && last_run.is_none() {
                 "Fy" // Yellow
             } else if let Some(lr) = last_run {
