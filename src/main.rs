@@ -167,6 +167,12 @@ fn main() -> AppResult<()> {
 
                 if !cli.quiet {
                     print_task_status(&tasks, &sort);
+                    if watch {
+                        // Add extra blank lines to handle table height changes
+                        for _ in 0..5 {
+                            println!();
+                        }
+                    }
                 }
 
                 if !watch {
