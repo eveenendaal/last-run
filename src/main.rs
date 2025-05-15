@@ -148,16 +148,20 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Status { id, watch, sort } => {
-            let interval = Duration::from_millis(100);
+            let draw_interval_ms = 100;
+            let clear_interval_secs = 5;
+            let interval = Duration::from_millis(draw_interval_ms);
+            let clears_every = (clear_interval_secs * 1000) / draw_interval_ms;
             let mut first = true;
+            let mut ticks = 0;
             loop {
                 if watch {
-                    if first {
-                        // On the first draw, clear the screen
+                    if first || ticks % clears_every == 0 {
+                        // Every clear_interval_secs seconds, clear the screen
                         print!("\x1B[2J\x1B[H");
                         first = false;
                     } else {
-                        // On subsequent draws, just move the cursor to the top left
+                        // On other draws, just move the cursor to the top left
                         print!("\x1B[H");
                     }
                     io::stdout().flush().unwrap();
@@ -167,12 +171,6 @@ fn main() -> AppResult<()> {
 
                 if !cli.quiet {
                     print_task_status(&tasks, &sort);
-                    if watch {
-                        // Add extra blank lines to handle table height changes
-                        for _ in 0..5 {
-                            println!();
-                        }
-                    }
                 }
 
                 if !watch {
@@ -180,6 +178,7 @@ fn main() -> AppResult<()> {
                 }
 
                 thread::sleep(interval);
+                ticks += 1;
             }
         }
 
