@@ -106,7 +106,14 @@ pub fn get_task_logs(
 pub fn get_all_tasks(
     conn: &Connection,
     task_id: Option<String>,
-) -> AppResult<Vec<(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)>> {
+) -> AppResult<
+    Vec<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )>,
+> {
     let mut query = String::from("SELECT id, last_run, start_time, duration FROM tasks");
 
     if let Some(_) = &task_id {

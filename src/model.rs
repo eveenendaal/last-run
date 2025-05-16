@@ -10,24 +10,15 @@ pub struct Task {
 
 impl Task {
     pub fn update(&self, conn: &Connection) -> AppResult<()> {
-        // Update the last_run time if set
-        if let Some(last_run) = self.last_run {
-            conn.execute(
-                "UPDATE tasks SET last_run = ? WHERE id = ?",
-                (&last_run.to_rfc3339(), &self.id),
-            )?;
-        } else {
-            // Clear last_run if not set
-            conn.execute("UPDATE tasks SET last_run = NULL WHERE id = ?", [&self.id])?;
-        }
-
-        // Update the start_time if set
-        if let Some(start_time) = self.start_time {
-            conn.execute(
-                "UPDATE tasks SET start_time = ? WHERE id = ?",
-                (&start_time.to_rfc3339(), &self.id),
-            )?;
-        }
+        // Combine updates into a single statement for efficiency
+        conn.execute(
+            "UPDATE tasks SET last_run = ?, start_time = ? WHERE id = ?",
+            (
+                &self.last_run.map(|dt| dt.to_rfc3339()),
+                &self.start_time.map(|dt| dt.to_rfc3339()),
+                &self.id,
+            ),
+        )?;
 
         // Insert a record into the log table if start_time and last_run are set
         if let (Some(start_time), Some(last_run)) = (self.start_time, self.last_run) {
@@ -56,14 +47,10 @@ impl Task {
         Ok(())
     }
 
-    pub fn start(&mut self, conn: &Connection) -> AppResult<()> {
-        self.start_time = Some(Utc::now()); // Set the start time
-        self.last_run = None; // Clear last_run when starting
-        conn.execute(
-            "UPDATE tasks SET start_time = ?, last_run = NULL WHERE id = ?",
-            (&self.start_time.unwrap().to_rfc3339(), &self.id),
-        )?;
-        Ok(())
+    fn datetime_from_str(s: &str) -> Option<DateTime<Utc>> {
+        DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
     }
 
     pub fn select(conn: &Connection, id: &str, quiet: bool) -> AppResult<Self> {
@@ -72,16 +59,10 @@ impl Task {
 
         if let Some(row) = rows.next()? {
             let id: String = row.get(0)?;
-            let last_run_str: Option<String> = row.get(1)?;
-            let last_run = last_run_str
-                .map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .flatten()
-                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let last_run: Option<String> = row.get(1)?;
+            let last_run = last_run.map(|s| Self::datetime_from_str(&s)).flatten();
             let start_time: Option<String> = row.get(2)?;
-            let start_time = start_time
-                .map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .flatten()
-                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let start_time = start_time.map(|s| Self::datetime_from_str(&s)).flatten();
 
             Ok(Task {
                 id,

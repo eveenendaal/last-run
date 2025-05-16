@@ -38,12 +38,12 @@ fn main() -> AppResult<()> {
             let mut elapsed_time = None;
             let mut task = Task::select(&conn, &id, cli.quiet)?;
             task.last_run = Some(Utc::now());
+            task.update(&conn)?;
             if let Some(start_time) = task.start_time {
                 elapsed_time = Some(format_duration(
                     Utc::now().signed_duration_since(start_time),
                 ));
             }
-            task.update(&conn)?;
 
             if !cli.quiet {
                 let elapsed_msg = elapsed_time
@@ -73,7 +73,7 @@ fn main() -> AppResult<()> {
             let mut task = Task::select(&conn, &id, cli.quiet)?;
             task.start_time = Some(Utc::now());
             task.last_run = None;
-            task.start(&conn)?;
+            task.update(&conn)?;
 
             if !cli.quiet {
                 println!(
@@ -117,6 +117,7 @@ fn main() -> AppResult<()> {
                         BOLD, RED, WHITE, task.id, RED, RESET
                     );
                 }
+                db::delete_task(&conn, &task.id)?;
                 process::exit(1);
             }
         }
