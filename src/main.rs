@@ -17,24 +17,31 @@ use std::io::{self, Write};
 use std::process;
 use std::{thread, time::Duration};
 
+fn require_id(id: &str) -> AppResult<()> {
+    if id.is_empty() {
+        Err(AppError::MissingTaskId)
+    } else {
+        Ok(())
+    }
+}
+
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
     let conn = db::get_file_based_connection()?;
-    db::init_db(&conn)?; // Pass the connection to initialize the schema
+    db::init_db(&conn)?;
 
     match cli.command {
         Commands::Update { id } | Commands::Done { id } => {
-            if id.is_empty() {
-                return Err(AppError::MissingTaskId);
-            }
+            require_id(&id)?;
 
-            let mut elapsed_time: Option<String> = None;
-            let mut task = Task::new(id).select(&conn, cli.quiet)?;
+            let mut elapsed_time = None;
+            let mut task = Task::select(&conn, &id, cli.quiet)?;
             task.last_run = Some(Utc::now());
             if let Some(start_time) = task.start_time {
-                let elapsed = Utc::now().signed_duration_since(start_time);
-                elapsed_time = Some(format_duration(elapsed));
+                elapsed_time = Some(format_duration(
+                    Utc::now().signed_duration_since(start_time),
+                ));
             }
             task.update(&conn)?;
 
@@ -61,11 +68,9 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Start { id } => {
-            if id.is_empty() {
-                return Err(AppError::MissingTaskId);
-            }
+            require_id(&id)?;
 
-            let mut task = Task::new(id).select(&conn, cli.quiet)?;
+            let mut task = Task::select(&conn, &id, cli.quiet)?;
             task.start_time = Some(Utc::now());
             task.last_run = None;
             task.start(&conn)?;
@@ -86,12 +91,10 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Check { id, duration } => {
-            if id.is_empty() {
-                return Err(AppError::MissingTaskId);
-            }
+            require_id(&id)?;
 
             let duration = parse_duration(&duration).map_err(AppError::DurationParse)?;
-            let task = Task::new(id).select(&conn, cli.quiet)?;
+            let task = Task::select(&conn, &id, cli.quiet)?;
             if let Some(last_run) = task.last_run {
                 let (should_run, message) = should_run_task(last_run, duration);
                 if !cli.quiet {
@@ -103,10 +106,7 @@ fn main() -> AppResult<()> {
                         RESET
                     );
                 }
-
-                // Store the duration in the database
                 update_task_duration(&conn, &task.id, duration.num_seconds())?;
-
                 if should_run {
                     process::exit(1);
                 }
@@ -122,8 +122,7 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Logs { limit, id } => {
-            let logs = db::get_task_logs(&conn, id, limit)?; // Pass task ID filter
-
+            let logs = db::get_task_logs(&conn, id, limit)?;
             if !cli.quiet {
                 print_task_logs(&logs);
             }
@@ -139,26 +138,21 @@ fn main() -> AppResult<()> {
             loop {
                 if watch {
                     if first || ticks % clears_every == 0 {
-                        // Every clear_interval_secs seconds, clear the screen
                         print!("\x1B[2J\x1B[H");
                         first = false;
                     } else {
-                        // On other draws, just move the cursor to the top left
                         print!("\x1B[H");
                     }
                     io::stdout().flush().unwrap();
                 }
 
                 let tasks = db::get_all_tasks(&conn, id.as_ref().cloned())?;
-
                 if !cli.quiet {
                     print_task_status(&tasks, &sort);
                 }
-
                 if !watch {
                     break;
                 }
-
                 thread::sleep(interval);
                 ticks += 1;
             }
@@ -172,14 +166,9 @@ fn main() -> AppResult<()> {
         }
 
         Commands::Delete { id } => {
-            if id.is_empty() {
-                return Err(AppError::MissingTaskId);
-            }
+            require_id(&id)?;
 
-            // Delete logs for the given task ID
             let logs_deleted = db::delete_task_logs(&conn, &id)?;
-
-            // Delete the task record
             let task_deleted = db::delete_task(&conn, &id)?;
 
             if !cli.quiet {

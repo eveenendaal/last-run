@@ -9,17 +9,7 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(id: String) -> Self {
-        Task {
-            id,
-            last_run: None,
-            start_time: None,
-        }
-    }
-
     pub fn update(&self, conn: &Connection) -> AppResult<()> {
-        self.select(conn, false)?;
-
         // Update the last_run time if set
         if let Some(last_run) = self.last_run {
             conn.execute(
@@ -66,42 +56,6 @@ impl Task {
         Ok(())
     }
 
-    pub fn select(&self, conn: &Connection, quiet: bool) -> AppResult<Task> {
-        let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
-        let mut rows = stmt.query([&self.id])?;
-
-        if let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            let last_run_str: Option<String> = row.get(1)?;
-            let last_run = last_run_str
-                .map(|s| DateTime::parse_from_rfc3339(&s).ok())
-                .flatten()
-                .map(|dt| dt.with_timezone(&Utc));
-            let start_time: Option<String> = row.get(2)?;
-            let start_time = start_time
-                .map(|s| DateTime::parse_from_rfc3339(&s).ok())
-                .flatten()
-                .map(|dt| dt.with_timezone(&Utc));
-
-            Ok(Task {
-                id,
-                last_run,
-                start_time,
-            })
-        } else {
-            // No record found, insert a new one
-            if !quiet {
-                println!("No record found for task ID: {}", self.id);
-            }
-            self.insert(conn)?;
-            Ok(Task {
-                id: self.id.clone(),
-                last_run: self.last_run,
-                start_time: self.start_time,
-            })
-        }
-    }
-
     pub fn start(&mut self, conn: &Connection) -> AppResult<()> {
         self.start_time = Some(Utc::now()); // Set the start time
         self.last_run = None; // Clear last_run when starting
@@ -110,5 +64,41 @@ impl Task {
             (&self.start_time.unwrap().to_rfc3339(), &self.id),
         )?;
         Ok(())
+    }
+
+    pub fn select(conn: &Connection, id: &str, quiet: bool) -> AppResult<Self> {
+        let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
+        let mut rows = stmt.query([id])?;
+
+        if let Some(row) = rows.next()? {
+            let id: String = row.get(0)?;
+            let last_run_str: Option<String> = row.get(1)?;
+            let last_run = last_run_str
+                .map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .flatten()
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let start_time: Option<String> = row.get(2)?;
+            let start_time = start_time
+                .map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .flatten()
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
+            Ok(Task {
+                id,
+                last_run,
+                start_time,
+            })
+        } else {
+            if !quiet {
+                println!("No record found for task ID: {}", id);
+            }
+            let task = Task {
+                id: id.to_string(),
+                last_run: None,
+                start_time: None,
+            };
+            task.insert(conn)?;
+            Ok(task)
+        }
     }
 }
