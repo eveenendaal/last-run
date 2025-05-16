@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use chrono::{DateTime, Utc};
-use rusqlite::Connection;
+use rusqlite::{Connection, Row};
 
 pub struct Task {
     pub id: String,
@@ -9,6 +9,25 @@ pub struct Task {
 }
 
 impl Task {
+    fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        let id: String = row.get(0)?;
+        let last_run: Option<String> = row.get(1)?;
+        let last_run = last_run
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+        let start_time: Option<String> = row.get(2)?;
+        let start_time = start_time
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+        Ok(Task {
+            id,
+            last_run,
+            start_time,
+        })
+    }
+
     pub fn update(&self, conn: &Connection) -> AppResult<()> {
         // Combine updates into a single statement for efficiency
         conn.execute(
@@ -47,39 +66,32 @@ impl Task {
         Ok(())
     }
 
-    fn datetime_from_str(s: &str) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(s)
-            .ok()
-            .map(|dt| dt.with_timezone(&Utc))
-    }
-
-    pub fn select(conn: &Connection, id: &str, quiet: bool) -> AppResult<Self> {
+    pub fn select(conn: &Connection, id: &str, _quiet: bool) -> AppResult<Option<Self>> {
         let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
         let mut rows = stmt.query([id])?;
 
         if let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            let last_run: Option<String> = row.get(1)?;
-            let last_run = last_run.map(|s| Self::datetime_from_str(&s)).flatten();
-            let start_time: Option<String> = row.get(2)?;
-            let start_time = start_time.map(|s| Self::datetime_from_str(&s)).flatten();
-
-            Ok(Task {
-                id,
-                last_run,
-                start_time,
-            })
+            Ok(Some(Task::from_row(&row)?))
         } else {
-            if !quiet {
-                println!("No record found for task ID: {}", id);
+            Ok(None)
+        }
+    }
+
+    pub fn ensure(conn: &Connection, id: &str, quiet: bool) -> AppResult<Self> {
+        match Self::select(conn, id, true)? {
+            Some(task) => Ok(task),
+            None => {
+                if !quiet {
+                    println!("No record found for task ID: {}", id);
+                }
+                let task = Task {
+                    id: id.to_string(),
+                    last_run: None,
+                    start_time: None,
+                };
+                task.insert(conn)?;
+                Ok(task)
             }
-            let task = Task {
-                id: id.to_string(),
-                last_run: None,
-                start_time: None,
-            };
-            task.insert(conn)?;
-            Ok(task)
         }
     }
 }

@@ -36,7 +36,7 @@ fn main() -> AppResult<()> {
             require_id(&id)?;
 
             let mut elapsed_time = None;
-            let mut task = Task::select(&conn, &id, cli.quiet)?;
+            let mut task = Task::ensure(&conn, &id, cli.quiet)?;
             task.last_run = Some(Utc::now());
             task.update(&conn)?;
             if let Some(start_time) = task.start_time {
@@ -70,7 +70,7 @@ fn main() -> AppResult<()> {
         Commands::Start { id } => {
             require_id(&id)?;
 
-            let mut task = Task::select(&conn, &id, cli.quiet)?;
+            let mut task = Task::ensure(&conn, &id, cli.quiet)?;
             task.start_time = Some(Utc::now());
             task.last_run = None;
             task.update(&conn)?;
@@ -94,30 +94,46 @@ fn main() -> AppResult<()> {
             require_id(&id)?;
 
             let duration = parse_duration(&duration).map_err(AppError::DurationParse)?;
-            let task = Task::select(&conn, &id, cli.quiet)?;
-            if let Some(last_run) = task.last_run {
-                let (should_run, message) = should_run_task(last_run, duration);
-                if !cli.quiet {
-                    println!(
-                        "{}{}{}{}",
-                        BOLD,
-                        if should_run { RED } else { GREEN },
-                        message,
-                        RESET
-                    );
-                }
-                update_task_duration(&conn, &task.id, duration.num_seconds())?;
-                if should_run {
+            let task = match Task::select(&conn, &id, cli.quiet)? {
+                Some(task) => task,
+                None => {
+                    if !cli.quiet {
+                        println!(
+                            "{}{}Task {}{}{} does not exist yet. It is considered due.{}",
+                            BOLD, RED, WHITE, id, RED, RESET
+                        );
+                    }
                     process::exit(1);
                 }
-            } else {
-                if !cli.quiet {
-                    println!(
-                        "{}{}Task {}{}{} has no recorded last run. It is considered due.{}",
-                        BOLD, RED, WHITE, task.id, RED, RESET
-                    );
+            };
+
+            let should_exit_due = match task.last_run {
+                Some(last_run) => {
+                    let (should_run, message) = should_run_task(last_run, duration);
+                    if !cli.quiet {
+                        println!(
+                            "{}{}{}{}",
+                            BOLD,
+                            if should_run { RED } else { GREEN },
+                            message,
+                            RESET
+                        );
+                    }
+                    update_task_duration(&conn, &task.id, duration.num_seconds())?;
+                    should_run
                 }
-                db::delete_task(&conn, &task.id)?;
+                None => {
+                    if !cli.quiet {
+                        println!(
+                            "{}{}Task {}{}{} has no recorded last run. It is considered due.{}",
+                            BOLD, RED, WHITE, task.id, RED, RESET
+                        );
+                    }
+                    true
+                }
+            };
+
+            if should_exit_due {
                 process::exit(1);
             }
         }
@@ -190,3 +206,4 @@ fn main() -> AppResult<()> {
 
     Ok(())
 }
+
