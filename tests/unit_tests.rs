@@ -28,13 +28,13 @@ fn test_task_crud_operations() {
     let mut task = Task::new("test_task".to_string());
     task.insert(&conn).unwrap();
 
-    let fetched_task = task.select(&conn, true).unwrap().unwrap();
+    let fetched_task = task.select(&conn, true).unwrap();
     assert_eq!(fetched_task.id, "test_task");
 
     task.last_run = Some(Utc::now());
     task.update(&conn).unwrap();
 
-    let updated_task = task.select(&conn, true).unwrap().unwrap();
+    let updated_task = task.select(&conn, true).unwrap();
     assert!(updated_task.last_run.is_some());
 }
 

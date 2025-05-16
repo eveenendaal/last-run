@@ -29,19 +29,14 @@ fn main() -> AppResult<()> {
                 return Err(AppError::MissingTaskId);
             }
 
-            let mut task = Task::new(id);
-            task.last_run = Some(Utc::now());
             let mut elapsed_time: Option<String> = None;
-
-            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
-                task.start_time = existing_task.start_time; // Preserve the existing start_time
-                if let Some(start_time) = task.start_time {
-                    let elapsed = Utc::now().signed_duration_since(start_time);
-                    elapsed_time = Some(format_duration(elapsed));
-                }
-                task.last_run = Some(Utc::now()); // Set last_run
-                task.update(&conn)?;
+            let mut task = Task::new(id).select(&conn, cli.quiet)?;
+            task.last_run = Some(Utc::now());
+            if let Some(start_time) = task.start_time {
+                let elapsed = Utc::now().signed_duration_since(start_time);
+                elapsed_time = Some(format_duration(elapsed));
             }
+            task.update(&conn)?;
 
             if !cli.quiet {
                 let elapsed_msg = elapsed_time
@@ -70,12 +65,9 @@ fn main() -> AppResult<()> {
                 return Err(AppError::MissingTaskId);
             }
 
-            let mut task = Task::new(id);
+            let mut task = Task::new(id).select(&conn, cli.quiet)?;
             task.start_time = Some(Utc::now());
-            task.last_run = None; // Clear last_run when setting start_time
-            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
-                task.start_time = existing_task.start_time; // Preserve the existing start time if any
-            }
+            task.last_run = None;
             task.start(&conn)?;
 
             if !cli.quiet {
@@ -99,43 +91,33 @@ fn main() -> AppResult<()> {
             }
 
             let duration = parse_duration(&duration).map_err(AppError::DurationParse)?;
+            let task = Task::new(id).select(&conn, cli.quiet)?;
+            if let Some(last_run) = task.last_run {
+                let (should_run, message) = should_run_task(last_run, duration);
+                if !cli.quiet {
+                    println!(
+                        "{}{}{}{}",
+                        BOLD,
+                        if should_run { RED } else { GREEN },
+                        message,
+                        RESET
+                    );
+                }
 
-            let task = Task::new(id);
-            if let Some(existing_task) = task.select(&conn, cli.quiet)? {
-                if let Some(last_run) = existing_task.last_run {
-                    let (should_run, message) = should_run_task(last_run, duration);
-                    if !cli.quiet {
-                        println!(
-                            "{}{}{}{}",
-                            BOLD,
-                            if should_run { RED } else { GREEN },
-                            message,
-                            RESET
-                        );
-                    }
+                // Store the duration in the database
+                update_task_duration(&conn, &task.id, duration.num_seconds())?;
 
-                    // Store the duration in the database
-                    update_task_duration(&conn, &task.id, duration.num_seconds())?;
-
-                    if should_run {
-                        process::exit(1);
-                    }
-                } else {
-                    if !cli.quiet {
-                        println!(
-                            "{}{}Task {}{}{} has no recorded last run. It is considered due.{}",
-                            BOLD, RED, WHITE, task.id, RED, RESET
-                        );
-                    }
+                if should_run {
                     process::exit(1);
                 }
             } else {
                 if !cli.quiet {
                     println!(
-                        "{}{}No record found for task ID: {}{}{}",
-                        BOLD, RED, WHITE, task.id, RESET
+                        "{}{}Task {}{}{} has no recorded last run. It is considered due.{}",
+                        BOLD, RED, WHITE, task.id, RED, RESET
                     );
                 }
+                process::exit(1);
             }
         }
 

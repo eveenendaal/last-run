@@ -5,7 +5,7 @@ use rusqlite::Connection;
 pub struct Task {
     pub id: String,
     pub last_run: Option<DateTime<Utc>>,
-    pub start_time: Option<DateTime<Utc>>, 
+    pub start_time: Option<DateTime<Utc>>,
 }
 
 impl Task {
@@ -66,7 +66,7 @@ impl Task {
         Ok(())
     }
 
-    pub fn select(&self, conn: &Connection, quiet: bool) -> AppResult<Option<Task>> {
+    pub fn select(&self, conn: &Connection, quiet: bool) -> AppResult<Task> {
         let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
         let mut rows = stmt.query([&self.id])?;
 
@@ -83,22 +83,22 @@ impl Task {
                 .flatten()
                 .map(|dt| dt.with_timezone(&Utc));
 
-            Ok(Some(Task {
+            Ok(Task {
                 id,
                 last_run,
                 start_time,
-            }))
+            })
         } else {
             // No record found, insert a new one
             if !quiet {
                 println!("No record found for task ID: {}", self.id);
             }
             self.insert(conn)?;
-            Ok(Some(Task {
+            Ok(Task {
                 id: self.id.clone(),
                 last_run: self.last_run,
                 start_time: self.start_time,
-            }))
+            })
         }
     }
 
