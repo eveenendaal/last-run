@@ -11,7 +11,7 @@ on:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
-      - 'build.yml'
+      - '.github/workflows/build.yml'
 
   workflow_dispatch:
 
