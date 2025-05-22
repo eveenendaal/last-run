@@ -83,6 +83,13 @@ pub enum Commands {
         #[arg(short, long)]
         id: String,
     },
+
+    /// Clear a task's start and done values
+    Clear {
+        /// Task ID to clear
+        #[arg(short, long)]
+        id: String,
+    },
 }
 
 pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String) {

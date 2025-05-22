@@ -202,6 +202,31 @@ fn main() -> AppResult<()> {
                 }
             }
         }
+
+        Commands::Clear { id } => {
+            require_id(&id)?;
+            let mut task = match Task::select(&conn, &id, cli.quiet)? {
+                Some(task) => task,
+                None => {
+                    if !cli.quiet {
+                        println!(
+                            "{}{}Task {}{}{} does not exist.{}",
+                            BOLD, RED, WHITE, id, RED, RESET
+                        );
+                    }
+                    return Ok(());
+                }
+            };
+            task.last_run = None;
+            task.start_time = None;
+            task.update(&conn)?;
+            if !cli.quiet {
+                println!(
+                    "{}{}Task {}{}{} cleared (start and done values reset).{}",
+                    BOLD, GREEN, WHITE, id, GREEN, RESET
+                );
+            }
+        }
     }
 
     Ok(())
