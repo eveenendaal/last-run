@@ -11,7 +11,7 @@ on:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
-      - '.github/workflows/builder.yml'
+      - 'build.yml'
 
   workflow_dispatch:
 
@@ -38,11 +38,7 @@ jobs:
         run: pip install go-task-bin
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - uses: actions/cache@v4
         with:
@@ -74,11 +70,7 @@ jobs:
         run: pip install go-task-bin
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - uses: actions/cache@v4
         with:
