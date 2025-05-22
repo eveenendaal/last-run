@@ -3,8 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "lastrun")]
-#[command(about = "A utility to track when tasks were last run")]
+#[command(author, name = "lastrun", version, about = "A utility to track when tasks were last run", long_about = None)]
 pub struct Cli {
     /// Suppress output messages
     #[arg(short, long)]
@@ -116,4 +115,3 @@ pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, St
         )
     }
 }
-
