@@ -56,4 +56,14 @@ Add the `-q` or `--quiet` flag to suppress output messages:
 ```bash
 lastrun start --id my-task -q
 ```
-`
+
+### Command Line Auto Completion
+
+To enable zsh auto-completion, add the following to your `~/.zshrc`:
+
+```sh
+source <(lastrun completions zsh)
+```
+
+Restart your terminal or run `source ~/.zshrc` to activate tab completion for lastrun commands and options.
+

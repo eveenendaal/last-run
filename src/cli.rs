@@ -1,6 +1,6 @@
 use crate::format::format_duration;
 use chrono::{DateTime, Duration, Utc};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, name = "lastrun", version, about = "A utility to track when tasks were last run", long_about = None)]
@@ -11,6 +11,11 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum Shell {
+    Zsh,
 }
 
 #[derive(Subcommand)]
@@ -89,6 +94,13 @@ pub enum Commands {
         #[arg(short, long)]
         id: String,
     },
+
+    /// Generate shell completions for your shell
+    Completions {
+        /// The shell to generate completions for (bash, zsh, fish, powershell, elvish)
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, String) {
@@ -114,4 +126,20 @@ pub fn should_run_task(last_run: DateTime<Utc>, duration: Duration) -> (bool, St
             ),
         )
     }
+}
+
+// Add a function to generate shell completions
+pub fn generate_completions(shell: Shell) {
+    use clap_complete;
+    use std::io;
+    let mut cmd = Cli::command();
+    let bin_name = cmd.get_name().to_string();
+    clap_complete::generate(
+        match shell {
+            Shell::Zsh => clap_complete::Shell::Zsh,
+        },
+        &mut cmd,
+        bin_name,
+        &mut io::stdout(),
+    );
 }
