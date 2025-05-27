@@ -228,7 +228,7 @@ fn main() -> AppResult<()> {
             }
         }
         // Add a new subcommand for completions
-        Commands::Completions { shell } => {
+        Commands::Completion { shell } => {
             cli::generate_completions(shell);
         }
     }
