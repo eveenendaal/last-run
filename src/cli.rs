@@ -1,6 +1,6 @@
 use crate::format::format_duration;
 use chrono::{DateTime, Duration, Utc};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(author, name = "lastrun", version, about = "A utility to track when tasks were last run", long_about = None)]
@@ -16,6 +16,16 @@ pub struct Cli {
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum Shell {
     Zsh,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum SortColumn {
+    Id,
+    LastRun,
+    TimeSinceLastRun,
+    Started,
+    Elapsed,
+    Duration,
 }
 
 #[derive(Subcommand)]
@@ -74,8 +84,8 @@ pub enum Commands {
         watch: bool,
 
         /// Column to sort by (id, last_run, time_since_last_run, started, elapsed, duration)
-        #[arg(short, long, default_value = "id")]
-        sort: String,
+        #[arg(short, long, value_enum, default_value_t = SortColumn::Id)]
+        sort: SortColumn,
     },
 
     /// Reset the tasks database
