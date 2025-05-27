@@ -1,6 +1,7 @@
 use crate::format::{format_datetime, format_duration};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
+use crate::cli::SortColumn;
 
 // ANSI color constants
 pub const BOLD: &str = "\x1b[1m";
@@ -14,22 +15,22 @@ pub const TEXT_COLOR: &str = "FW";
 /// Format and print task status
 pub fn print_task_status(
     tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)],
-    sort_by: &str,
+    sort_by: &SortColumn,
 ) {
     let mut tasks = tasks.to_vec();
     let now = Utc::now();
 
     // Sort tasks based on the sort_by parameter
     match sort_by {
-        "id" => tasks.sort_by(|a, b| a.0.cmp(&b.0)),
-        "last_run" => tasks.sort_by(|a, b| a.1.cmp(&b.1)),
-        "time_since_last_run" => tasks.sort_by(|a, b| {
+        SortColumn::Id => tasks.sort_by(|a, b| a.0.cmp(&b.0)),
+        SortColumn::LastRun => tasks.sort_by(|a, b| a.1.cmp(&b.1)),
+        SortColumn::TimeSinceLastRun => tasks.sort_by(|a, b| {
             let a_val = a.1.map(|lr| now.signed_duration_since(lr)).unwrap_or(chrono::Duration::MAX);
             let b_val = b.1.map(|lr| now.signed_duration_since(lr)).unwrap_or(chrono::Duration::MAX);
             a_val.cmp(&b_val)
         }),
-        "started" => tasks.sort_by(|a, b| a.2.cmp(&b.2)),
-        "elapsed" => tasks.sort_by(|a, b| {
+        SortColumn::Started => tasks.sort_by(|a, b| a.2.cmp(&b.2)),
+        SortColumn::Elapsed => tasks.sort_by(|a, b| {
             let a_val = match (a.2, a.1) {
                 (Some(st), Some(lr)) if st < lr => lr.signed_duration_since(st),
                 (Some(st), None) => now.signed_duration_since(st),
@@ -42,8 +43,7 @@ pub fn print_task_status(
             };
             a_val.cmp(&b_val)
         }),
-        "duration" => tasks.sort_by(|a, b| a.3.cmp(&b.3)),
-        _ => {} // Default: no sorting
+        SortColumn::Duration => tasks.sort_by(|a, b| a.3.cmp(&b.3)),
     }
 
     let mut table = Table::new();
