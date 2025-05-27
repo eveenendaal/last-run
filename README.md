@@ -62,7 +62,7 @@ lastrun start --id my-task -q
 To enable zsh auto-completion, add the following to your `~/.zshrc`:
 
 ```sh
-source <(lastrun completions zsh)
+source <(lastrun completion zsh)
 ```
 
 Restart your terminal or run `source ~/.zshrc` to activate tab completion for lastrun commands and options.
