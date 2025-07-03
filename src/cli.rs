@@ -86,6 +86,10 @@ pub enum Commands {
         /// Column to sort by (id, last_run, time_since_last_run, started, elapsed, duration)
         #[arg(short, long, value_enum, default_value_t = SortColumn::Id)]
         sort: SortColumn,
+
+        /// Output status in JSON format
+        #[arg(long)]
+        json: bool,
     },
 
     /// Reset the tasks database

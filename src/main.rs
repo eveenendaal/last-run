@@ -9,7 +9,7 @@ use chrono::Utc;
 use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
 use db::update_task_duration;
-use display::{print_task_logs, print_task_status, BOLD, GREEN, RED, RESET, WHITE};
+use display::{print_task_logs, print_task_status, print_task_status_json, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
@@ -145,7 +145,7 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Status { id, watch, sort } => {
+        Commands::Status { id, watch, sort, json } => {
             let draw_interval_ms = 100;
             let clear_interval_secs = 5;
             let interval = Duration::from_millis(draw_interval_ms);
@@ -153,7 +153,7 @@ fn main() -> AppResult<()> {
             let mut first = true;
             let mut ticks = 0;
             loop {
-                if watch {
+                if watch && !json {
                     if first || ticks % clears_every == 0 {
                         print!("\x1B[2J\x1B[H");
                         first = false;
@@ -165,9 +165,13 @@ fn main() -> AppResult<()> {
 
                 let tasks = db::get_all_tasks(&conn, id.as_ref().cloned())?;
                 if !cli.quiet {
-                    print_task_status(&tasks, &sort);
+                    if json {
+                        print_task_status_json(&tasks);
+                    } else {
+                        print_task_status(&tasks, &sort);
+                    }
                 }
-                if !watch {
+                if !watch || json {
                     break;
                 }
                 thread::sleep(interval);
