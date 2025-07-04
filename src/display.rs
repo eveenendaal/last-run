@@ -194,10 +194,10 @@ pub fn print_task_status_json(
             now.signed_duration_since(lr).num_seconds()
         });
 
-        // Calculate elapsed time
+        // Calculate elapsed time in milliseconds
         let elapsed_time = match (*start_time, *last_run) {
-            (Some(st), Some(lr)) if st < lr => Some(lr.signed_duration_since(st).num_seconds()),
-            (Some(st), None) => Some(now.signed_duration_since(st).num_seconds()),
+            (Some(st), Some(lr)) if st < lr => Some(lr.signed_duration_since(st).num_milliseconds()),
+            (Some(st), None) => Some(now.signed_duration_since(st).num_milliseconds()),
             _ => None,
         };
 
@@ -225,7 +225,7 @@ pub fn print_task_status_json(
             "time_since_last_run_formatted": last_run.map(|lr| format_duration(now.signed_duration_since(lr))),
             "start_time": start_time.map(|dt| dt.to_rfc3339()),
             "elapsed_time": elapsed_time,
-            "elapsed_time_formatted": elapsed_time.map(|et| format_duration(Duration::seconds(et))),
+            "elapsed_time_formatted": elapsed_time.map(|et| format_duration(Duration::milliseconds(et))),
             "duration": duration,
             "duration_formatted": duration.map(|d| format_duration(Duration::seconds(d))),
             "status": status
