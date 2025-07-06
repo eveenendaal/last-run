@@ -191,7 +191,7 @@ pub fn print_task_status_json(
     let json_tasks: Vec<Value> = tasks.iter().map(|(id, last_run, start_time, duration)| {
         // Calculate time since last run
         let time_since_last_run = last_run.map(|lr| {
-            now.signed_duration_since(lr).num_seconds()
+            now.signed_duration_since(lr).num_milliseconds()
         });
 
         // Calculate elapsed time in milliseconds
