@@ -81,6 +81,7 @@ jobs:
           
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version will be: $NEW_VERSION"
+          echo "$NEW_VERSION" > VERSION
 
       - name: Install Task
         run: pip install go-task-bin
@@ -111,6 +112,7 @@ jobs:
           files: |
             target/release/lastrun
             target/release/lastrun.sha256
+            VERSION
 
       - name: Remove old releases
         run: task archive.releases
