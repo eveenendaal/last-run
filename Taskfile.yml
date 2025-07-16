@@ -19,8 +19,6 @@ tasks:
       - cargo test
   build:
     desc: Build LastRun
-    deps:
-      - test
     cmds:
       - cargo build --release
       - cd target/release && shasum -a 256 lastrun > lastrun.sha256
