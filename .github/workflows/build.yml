@@ -49,7 +49,7 @@ jobs:
         run: task test
 
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     environment: default
     needs: test
     defaults:
