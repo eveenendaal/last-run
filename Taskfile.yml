@@ -9,6 +9,7 @@ tasks:
     desc: Archive the releases
     cmds:
       - |
+        # Keep only the 3 most recent releases
         for i in $(gh release list --json tagName -q .[].tagName | tail -n +4); do
           gh release delete "$i" -y;
         done
