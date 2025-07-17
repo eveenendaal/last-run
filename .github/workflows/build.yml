@@ -34,8 +34,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Task
-        run: pip install go-task-bin
+      - name: Install Tools
+        uses: eveenendaal/github-actions/actions/install-my-tools@master
+        with:
+          include: task
 
       - uses: actions/cache@v4
         with:
@@ -66,8 +68,10 @@ jobs:
           tag-prefix: 'v'
           bump: 'patch'
 
-      - name: Install Task
-        run: pip install go-task-bin
+      - name: Install Tools
+        uses: eveenendaal/github-actions/actions/install-my-tools@master
+        with:
+          include: task
 
       - uses: actions/cache@v4
         with:
