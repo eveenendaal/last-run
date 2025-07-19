@@ -9,6 +9,7 @@ on:
     paths:
       - 'Taskfile.yml'
       - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
       - '.github/workflows/build.yml'
