@@ -1,8 +1,6 @@
 name: Build
 
 on:
-  schedule:
-    - cron: '0 6 * * 1' # run every Monday at 6 am
   push:
     branches:
       - master
