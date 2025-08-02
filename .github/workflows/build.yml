@@ -12,6 +12,18 @@ on:
       - 'tests/**/*.rs'
       - '.github/workflows/build.yml'
 
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+    paths:
+      - 'Taskfile.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - '.github/workflows/build.yml'
+
   workflow_dispatch:
 
 concurrency:
@@ -26,6 +38,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     environment: default
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     defaults:
       run:
         shell: bash
@@ -53,6 +66,7 @@ jobs:
     runs-on: macos-15
     environment: default
     needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     defaults:
       run:
         shell: bash
