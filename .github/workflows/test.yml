@@ -10,7 +10,7 @@ on:
       - 'Cargo.lock'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/*.yml'
 
 jobs:
   test:
