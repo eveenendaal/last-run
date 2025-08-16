@@ -30,7 +30,7 @@ jobs:
         shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Tools
         uses: eveenendaal/github-actions/actions/install-my-tools@master
@@ -57,7 +57,7 @@ jobs:
         shell: bash
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
