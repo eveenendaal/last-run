@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - master
-    paths:
-      - 'Taskfile.yml'
-      - 'Cargo.toml'
-      - 'src/**/*.rs'
-      - 'tests/**/*.rs'
-      - '.github/workflows/build.yml'
+  pull_request:
+    types: [closed]
+    branches:
+      - master
 
   workflow_dispatch:
 
@@ -23,6 +21,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     environment: default
     defaults:
@@ -30,7 +29,9 @@ jobs:
         shell: bash
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Install Tools
         uses: eveenendaal/github-actions/actions/install-my-tools@master
@@ -49,6 +50,7 @@ jobs:
         run: task test
 
   build:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: macos-15
     environment: default
     needs: test
@@ -57,9 +59,10 @@ jobs:
         shell: bash
     
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Rust Version Upgrade
         id: version
