@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - master
-  pull_request:
-    types: [closed]
-    branches:
-      - master
+    paths:
+      - 'Taskfile.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - '.github/workflows/*.yml'
 
   workflow_dispatch:
 
