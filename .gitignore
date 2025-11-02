@@ -7,8 +7,16 @@ Cargo.lock
 
 # Backup files
 **/*.rs.bk
+**/*.bak
 
 # IDE files
 .idea/
 .vscode/
 *.sublime-*
+
+# macOS
+.DS_Store
+
+# Test databases
+*.db
+*.db-journal

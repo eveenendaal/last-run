@@ -4,6 +4,11 @@ version = "0.2.0"
 edition = "2021"
 authors = ["Eric Veenendaal"]
 description = "A utility to track when tasks were last run"
+license = "MIT"
+repository = "https://github.com/eveenendaal/last-run"
+readme = "README.md"
+keywords = ["cli", "task-tracking", "monitoring", "cron"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 rusqlite = "0.37.0"
