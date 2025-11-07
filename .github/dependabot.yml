@@ -11,7 +11,6 @@ updates:
       - "eveenendaal"
     schedule:
       interval: monthly
-      day: saturday
       time: "02:00"
       timezone: "Europe/Amsterdam"
   - package-ecosystem: "cargo"
@@ -20,6 +19,5 @@ updates:
       - "eveenendaal"
     schedule:
       interval: monthly
-      day: saturday
       time: "02:00"
       timezone: "Europe/Amsterdam"
