@@ -10,7 +10,7 @@ updates:
     assignees:
       - "eveenendaal"
     schedule:
-      interval: weekly
+      interval: monthly
       day: saturday
       time: "02:00"
       timezone: "Europe/Amsterdam"
@@ -19,7 +19,7 @@ updates:
     assignees:
       - "eveenendaal"
     schedule:
-      interval: weekly
+      interval: monthly
       day: saturday
       time: "02:00"
       timezone: "Europe/Amsterdam"
