@@ -11,6 +11,7 @@ on:
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
       - '.github/workflows/*.yml'
+      - '.github/actions/**/*.yml'
 
 jobs:
   test:
@@ -23,18 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Tools
-        uses: eveenendaal/github-actions/actions/install-my-tools@master
-        with:
-          include: task
+      - name: Setup Rust Environment
+        uses: ./.github/actions/setup-rust
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run Tests
+        run: task test
 
       - name: Build App
         run: task build

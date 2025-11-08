@@ -1,0 +1,24 @@
+name: 'Setup Rust Environment'
+description: 'Common setup steps for Rust projects including tools installation and caching'
+inputs:
+  include-task:
+    description: 'Whether to include task installation'
+    required: false
+    default: 'true'
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Tools
+      if: inputs.include-task == 'true'
+      uses: eveenendaal/github-actions/actions/install-my-tools@master
+      with:
+        include: task
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
