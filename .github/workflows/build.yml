@@ -39,6 +39,8 @@ jobs:
 
       - name: Setup Rust Environment
         uses: ./.github/actions/setup-rust
+        with:
+          cache-key-prefix: 'test-'
 
       - name: Test App
         run: task test
@@ -67,6 +69,8 @@ jobs:
 
       - name: Setup Rust Environment
         uses: ./.github/actions/setup-rust
+        with:
+          cache-key-prefix: 'release-'
 
       - name: Build App
         run: task build

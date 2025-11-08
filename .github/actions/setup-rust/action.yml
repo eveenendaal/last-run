@@ -5,6 +5,10 @@ inputs:
     description: 'Whether to include task installation'
     required: false
     default: 'true'
+  cache-key-prefix:
+    description: 'Additional prefix for cache key to separate different job types'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -21,4 +25,6 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.cache-key-prefix }}cargo-
