@@ -16,9 +16,9 @@ tasks:
   test:
     desc: Run tests
     cmds:
-      - cargo test
+      - cargo test --locked
   build:
     desc: Build LastRun
     cmds:
-      - cargo build --release
+      - cargo build --release --locked
       - cd target/release && shasum -a 256 lastrun > lastrun.sha256
