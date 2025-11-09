@@ -67,6 +67,9 @@ jobs:
           tag-prefix: 'v'
           bump: 'patch'
 
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
       - name: Setup Rust Environment
         uses: ./.github/actions/setup-rust
         with:
