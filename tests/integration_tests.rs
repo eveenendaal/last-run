@@ -1,6 +1,6 @@
-mod helper;
+mod common;
 use chrono::{Duration, Utc};
-use helper::make_task;
+use common::make_task;
 use lastrun::cli::should_run_task;
 use lastrun::db::{delete_task, delete_task_logs, get_all_tasks, get_task_logs, init_db};
 use rusqlite::Connection;

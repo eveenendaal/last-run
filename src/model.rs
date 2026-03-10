@@ -1,4 +1,5 @@
 use crate::error::AppResult;
+use crate::format::parse_rfc3339_opt;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, Row};
 
@@ -11,16 +12,8 @@ pub struct Task {
 impl Task {
     fn from_row(row: &Row) -> rusqlite::Result<Self> {
         let id: String = row.get(0)?;
-        let last_run: Option<String> = row.get(1)?;
-        let last_run = last_run
-            .as_deref()
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc));
-        let start_time: Option<String> = row.get(2)?;
-        let start_time = start_time
-            .as_deref()
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc));
+        let last_run = parse_rfc3339_opt(row.get(1)?);
+        let start_time = parse_rfc3339_opt(row.get(2)?);
         Ok(Task {
             id,
             last_run,
@@ -66,7 +59,7 @@ impl Task {
         Ok(())
     }
 
-    pub fn select(conn: &Connection, id: &str, _quiet: bool) -> AppResult<Option<Self>> {
+    pub fn select(conn: &Connection, id: &str) -> AppResult<Option<Self>> {
         let mut stmt = conn.prepare("SELECT id, last_run, start_time FROM tasks WHERE id = ?")?;
         let mut rows = stmt.query([id])?;
 
@@ -78,7 +71,7 @@ impl Task {
     }
 
     pub fn ensure(conn: &Connection, id: &str, quiet: bool) -> AppResult<Self> {
-        match Self::select(conn, id, true)? {
+        match Self::select(conn, id)? {
             Some(task) => Ok(task),
             None => {
                 if !quiet {

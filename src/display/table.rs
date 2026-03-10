@@ -1,17 +1,10 @@
+use crate::cli::SortColumn;
 use crate::format::{format_datetime, format_duration};
 use chrono::{DateTime, Duration, Utc};
 use prettytable::{format, Cell, Row, Table};
-use crate::cli::SortColumn;
-use serde_json::{json, Value};
 
-// ANSI color constants
-pub const BOLD: &str = "\x1b[1m";
-pub const RESET: &str = "\x1b[0m";
-pub const GREEN: &str = "\x1b[32m";
-pub const RED: &str = "\x1b[31m";
-pub const WHITE: &str = "\x1b[97m";
-pub const HEADER_COLOR: &str = "FG";
-pub const TEXT_COLOR: &str = "FW";
+const HEADER_COLOR: &str = "FG";
+const TEXT_COLOR: &str = "FW";
 
 /// Format and print task status
 pub fn print_task_status(
@@ -21,7 +14,6 @@ pub fn print_task_status(
     let mut tasks = tasks.to_vec();
     let now = Utc::now();
 
-    // Sort tasks based on the sort_by parameter
     match sort_by {
         SortColumn::Id => tasks.sort_by(|a, b| a.0.cmp(&b.0)),
         SortColumn::LastRun => tasks.sort_by(|a, b| a.1.cmp(&b.1)),
@@ -50,10 +42,8 @@ pub fn print_task_status(
     let mut table = Table::new();
     let now = Utc::now();
 
-    // Set table formatting
     table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
 
-    // Set title
     table.set_titles(Row::new(vec![
         Cell::new("TASK ID").style_spec(HEADER_COLOR),
         Cell::new("LAST RUN").style_spec(HEADER_COLOR),
@@ -74,16 +64,14 @@ pub fn print_task_status(
                 "Fy" // Yellow
             } else if let Some(lr) = last_run {
                 let time_since_last = now.signed_duration_since(*lr);
-                
-                // Only show in red if duration is set and time since last run exceeds that duration
                 if let Some(d) = duration {
                     if time_since_last > Duration::seconds(*d) {
                         "Fr" // Red
                     } else {
-                        TEXT_COLOR // White
+                        TEXT_COLOR
                     }
                 } else {
-                    TEXT_COLOR // White
+                    TEXT_COLOR
                 }
             } else {
                 "Fb" // Blue
@@ -95,7 +83,6 @@ pub fn print_task_status(
                 "never".to_string()
             };
 
-            // Calculate time since last run
             let time_since_last_run = if let Some(lr) = last_run {
                 format_duration(now.signed_duration_since(*lr))
             } else {
@@ -108,21 +95,15 @@ pub fn print_task_status(
                 "-".to_string()
             };
 
-            // Calculate elapsed time since start
             let elapsed_str = if let Some(st) = start_time {
                 if let Some(lr) = last_run {
                     if *st < *lr {
-                        // Task has completed, show elapsed time from start to last_run
-                        let elapsed = lr.signed_duration_since(*st);
-                        format_duration(elapsed)
+                        format_duration(lr.signed_duration_since(*st))
                     } else {
-                        // Invalid state (start time after last run)
                         "-".to_string()
                     }
                 } else {
-                    // Task is still running, show elapsed time from start until now
-                    let elapsed = now.signed_duration_since(*st);
-                    format_duration(elapsed)
+                    format_duration(now.signed_duration_since(*st))
                 }
             } else {
                 "-".to_string()
@@ -152,10 +133,8 @@ pub fn print_task_status(
 pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     let mut table = Table::new();
 
-    // Set table formatting
     table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
 
-    // Set title
     table.set_titles(Row::new(vec![
         Cell::new("TASK ID").style_spec(HEADER_COLOR),
         Cell::new("COMPLETION TIME").style_spec(HEADER_COLOR),
@@ -180,62 +159,4 @@ pub fn print_task_logs(logs: &[(String, DateTime<Utc>, i64)]) {
     }
 
     table.printstd();
-}
-
-/// Format and print task status as JSON
-pub fn print_task_status_json(
-    tasks: &[(String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>)],
-) {
-    let now = Utc::now();
-
-    let json_tasks: Vec<Value> = tasks.iter().map(|(id, last_run, start_time, duration)| {
-        // Calculate time since last run
-        let time_since_last_run = last_run.map(|lr| {
-            now.signed_duration_since(lr).num_milliseconds()
-        });
-
-        // Calculate elapsed time in milliseconds
-        let elapsed_time = match (*start_time, *last_run) {
-            (Some(st), Some(lr)) if st < lr => Some(lr.signed_duration_since(st).num_milliseconds()),
-            (Some(st), None) => Some(now.signed_duration_since(st).num_milliseconds()),
-            _ => None,
-        };
-
-        // Calculate status
-        let status = if start_time.is_some() && last_run.is_none() {
-            "running"
-        } else if let Some(lr) = last_run {
-            if let Some(d) = duration {
-                if now.signed_duration_since(*lr) > Duration::seconds(*d) {
-                    "due"
-                } else {
-                    "ok"
-                }
-            } else {
-                "ok"
-            }
-        } else {
-            "unknown"
-        };
-
-        json!({
-            "id": id,
-            "last_run": last_run.map(|dt| dt.to_rfc3339()),
-            "time_since_last_run": time_since_last_run,
-            "time_since_last_run_formatted": last_run.map(|lr| format_duration(now.signed_duration_since(lr))),
-            "start_time": start_time.map(|dt| dt.to_rfc3339()),
-            "elapsed_time": elapsed_time,
-            "elapsed_time_formatted": elapsed_time.map(|et| format_duration(Duration::milliseconds(et))),
-            "duration": duration,
-            "duration_formatted": duration.map(|d| format_duration(Duration::seconds(d))),
-            "status": status
-        })
-    }).collect();
-
-    let output = json!({
-        "tasks": json_tasks,
-        "timestamp": now.to_rfc3339()
-    });
-
-    println!("{}", serde_json::to_string_pretty(&output).unwrap());
 }

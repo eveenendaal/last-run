@@ -4,3 +4,5 @@ pub mod display;
 pub mod error;
 pub mod format;
 pub mod model;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

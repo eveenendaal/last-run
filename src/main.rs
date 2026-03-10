@@ -94,7 +94,7 @@ fn main() -> AppResult<()> {
             require_id(&id)?;
 
             let duration = parse_duration(&duration).map_err(AppError::DurationParse)?;
-            let task = match Task::select(&conn, &id, cli.quiet)? {
+            let task = match Task::select(&conn, &id)? {
                 Some(task) => task,
                 None => {
                     if !cli.quiet {
@@ -209,7 +209,7 @@ fn main() -> AppResult<()> {
 
         Commands::Clear { id } => {
             require_id(&id)?;
-            let mut task = match Task::select(&conn, &id, cli.quiet)? {
+            let mut task = match Task::select(&conn, &id)? {
                 Some(task) => task,
                 None => {
                     if !cli.quiet {

@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::format::parse_rfc3339_opt;
 use chrono::{DateTime, Utc};
 use dirs::home_dir;
 use rusqlite::Connection;
@@ -136,22 +137,8 @@ pub fn get_all_tasks(
         let start_time: Option<String> = row.get(2)?;
         let duration: Option<i64> = row.get(3)?;
 
-        // Handle DateTime parsing safely to avoid error conversion issues
-        let last_run = match last_run {
-            Some(s) => match DateTime::parse_from_rfc3339(&s) {
-                Ok(dt) => Some(dt.with_timezone(&Utc)),
-                Err(_) => None,
-            },
-            None => None,
-        };
-
-        let start_time = match start_time {
-            Some(s) => match DateTime::parse_from_rfc3339(&s) {
-                Ok(dt) => Some(dt.with_timezone(&Utc)),
-                Err(_) => None,
-            },
-            None => None,
-        };
+        let last_run = parse_rfc3339_opt(last_run);
+        let start_time = parse_rfc3339_opt(start_time);
 
         Ok((id, last_run, start_time, duration))
     };

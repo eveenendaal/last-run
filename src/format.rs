@@ -1,4 +1,4 @@
-use chrono::{Duration, DateTime, Utc, Local};
+use chrono::{DateTime, Duration, Local, Utc};
 
 pub fn parse_duration(duration_str: &str) -> Result<Duration, String> {
     if let Some(hours_str) = duration_str.strip_suffix('h') {
@@ -42,6 +42,13 @@ pub fn format_duration(duration: Duration) -> String {
             format!("{}{}h{}m", sign, hours, minutes)
         }
     }
+}
+
+/// Parse an optional RFC3339 string into an optional `DateTime<Utc>`, silently discarding errors.
+pub fn parse_rfc3339_opt(s: Option<String>) -> Option<DateTime<Utc>> {
+    s.as_deref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
 }
 
 /// Format a DateTime<Utc> to "%Y-%m-%d %H:%M:%S" in the local timezone
