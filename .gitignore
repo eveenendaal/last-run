@@ -20,3 +20,4 @@ Cargo.lock
 # Test databases
 *.db
 *.db-journal
+temp_Cargo.toml
