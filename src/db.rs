@@ -225,6 +225,48 @@ pub fn delete_task(conn: &Connection, task_id: &str) -> AppResult<usize> {
     Ok(rows_affected)
 }
 
+/// Count log entries older than the given cutoff timestamp, optionally filtered by task ID
+pub fn count_old_logs(
+    conn: &Connection,
+    cutoff: &DateTime<Utc>,
+    task_id: Option<&str>,
+) -> AppResult<usize> {
+    let cutoff_str = cutoff.to_rfc3339();
+    let count: i64 = match task_id {
+        Some(id) => conn.query_row(
+            "SELECT COUNT(*) FROM task_log WHERE end_time < ? AND id = ?",
+            rusqlite::params![cutoff_str, id],
+            |row| row.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COUNT(*) FROM task_log WHERE end_time < ?",
+            rusqlite::params![cutoff_str],
+            |row| row.get(0),
+        )?,
+    };
+    Ok(count as usize)
+}
+
+/// Delete log entries older than the given cutoff timestamp, optionally filtered by task ID
+pub fn delete_old_logs(
+    conn: &Connection,
+    cutoff: &DateTime<Utc>,
+    task_id: Option<&str>,
+) -> AppResult<usize> {
+    let cutoff_str = cutoff.to_rfc3339();
+    let rows_affected = match task_id {
+        Some(id) => conn.execute(
+            "DELETE FROM task_log WHERE end_time < ? AND id = ?",
+            rusqlite::params![cutoff_str, id],
+        )?,
+        None => conn.execute(
+            "DELETE FROM task_log WHERE end_time < ?",
+            rusqlite::params![cutoff_str],
+        )?,
+    };
+    Ok(rows_affected)
+}
+
 pub fn update_task_duration(conn: &Connection, id: &str, duration: i64) -> AppResult<()> {
     conn.execute(
         "UPDATE tasks SET duration = ? WHERE id = ?",

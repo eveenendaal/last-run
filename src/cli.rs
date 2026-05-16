@@ -104,6 +104,21 @@ pub enum Commands {
         id: String,
     },
 
+    /// Delete log entries older than a specified period
+    Archive {
+        /// How far back to keep logs (e.g. 30d, 2w, 3m, 24h). Entries older than this are deleted.
+        #[arg(short, long)]
+        older_than: String,
+
+        /// Limit archiving to a specific task ID (default: all tasks)
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Skip the confirmation prompt and delete immediately
+        #[arg(short, long)]
+        yes: bool,
+    },
+
     /// Generate shell completion for your shell
     Completion {
         /// The shell to generate completions for (bash, zsh, fish, powershell, elvish)

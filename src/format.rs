@@ -9,9 +9,20 @@ pub fn parse_duration(duration_str: &str) -> Result<Duration, String> {
         if let Ok(days) = days_str.parse::<i64>() {
             return Ok(Duration::days(days));
         }
+    } else if let Some(weeks_str) = duration_str.strip_suffix('w') {
+        if let Ok(weeks) = weeks_str.parse::<i64>() {
+            return Ok(Duration::weeks(weeks));
+        }
+    } else if let Some(months_str) = duration_str.strip_suffix('m') {
+        if let Ok(months) = months_str.parse::<i64>() {
+            return Ok(Duration::days(months * 30));
+        }
     }
 
-    Err(format!("Invalid duration format: {}", duration_str))
+    Err(format!(
+        "Invalid duration format: '{}'. Use a number followed by h (hours), d (days), w (weeks), or m (months). Examples: 24h, 7d, 2w, 3m",
+        duration_str
+    ))
 }
 
 pub fn format_duration(duration: Duration) -> String {

@@ -13,8 +13,15 @@ fn test_parse_duration() {
     assert_eq!(parse_duration("7d").unwrap(), Duration::days(7));
     assert_eq!(parse_duration("30d").unwrap(), Duration::days(30));
 
+    // Test weeks
+    assert_eq!(parse_duration("1w").unwrap(), Duration::weeks(1));
+    assert_eq!(parse_duration("2w").unwrap(), Duration::weeks(2));
+
+    // Test months (approximated as 30 days each)
+    assert_eq!(parse_duration("1m").unwrap(), Duration::days(30));
+    assert_eq!(parse_duration("3m").unwrap(), Duration::days(90));
+
     // Test invalid inputs
-    assert!(parse_duration("5m").is_err()); // Minutes not supported
     assert!(parse_duration("5").is_err()); // No unit
     assert!(parse_duration("ab").is_err()); // Not a number
     assert!(parse_duration("").is_err()); // Empty string
