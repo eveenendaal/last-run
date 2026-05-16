@@ -776,27 +776,27 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
 
     let shortcuts: &[(&str, &str)] = if in_history {
         &[
-            ("↑↓ / jk", "Navigate"),
+            ("↑↓/jk", "Navigate"),
             ("d", "Delete Entry"),
             ("r", "Refresh"),
-            ("q / Esc", "Back"),
+            ("q/Esc", "Back"),
         ]
     } else {
         &[
-            ("↑↓ / jk", "Navigate"),
-            ("←→ / Tab", "Sort Column"),
+            ("↑↓/jk", "Navigate"),
+            ("←→/Tab", "Sort"),
             ("s", "Toggle Order"),
-            ("Enter / h", "History"),
+            ("Enter/h", "History"),
             ("d", "Delete Task"),
             ("r", "Refresh"),
-            ("q / Esc", "Quit"),
+            ("q/Esc", "Quit"),
         ]
     };
 
     let mut spans: Vec<Span> = vec![Span::raw("  ")];
     for (i, (key, desc)) in shortcuts.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("     ", sep_style));
+            spans.push(Span::styled("  ", sep_style));
         }
         spans.push(Span::styled(format!(" {} ", key), key_style));
         spans.push(Span::raw(" "));
