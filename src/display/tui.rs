@@ -13,8 +13,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        block::Title, Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState,
-        Paragraph, Row, Table, TableState,
+        block::Title, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, TableState,
     },
     Frame, Terminal,
 };
@@ -49,18 +48,18 @@ struct HistoryView {
     task_id: String,
     // (raw_end_time_str, end_time, elapsed_ms) — raw string is used for deletion
     logs: Vec<(String, DateTime<Utc>, i64)>,
-    list_state: ListState,
+    table_state: TableState,
     confirm_delete: Option<String>, // raw end_time_str of the entry to delete
 }
 
 impl HistoryView {
     fn load(conn: &Connection, task_id: String) -> AppResult<Self> {
         let logs = db::get_task_log_entries(conn, &task_id)?;
-        let mut list_state = ListState::default();
+        let mut table_state = TableState::default();
         if !logs.is_empty() {
-            list_state.select(Some(0));
+            table_state.select(Some(0));
         }
-        Ok(Self { task_id, logs, list_state, confirm_delete: None })
+        Ok(Self { task_id, logs, table_state, confirm_delete: None })
     }
 
     fn refresh(&mut self, conn: &Connection) -> AppResult<()> {
@@ -69,7 +68,7 @@ impl HistoryView {
         let new_idx = selected_raw.as_deref().and_then(|raw| {
             self.logs.iter().position(|(r, _, _)| r == raw)
         });
-        self.list_state.select(new_idx.or_else(|| {
+        self.table_state.select(new_idx.or_else(|| {
             if self.logs.is_empty() { None } else { Some(0) }
         }));
         Ok(())
@@ -79,26 +78,26 @@ impl HistoryView {
         if self.logs.is_empty() {
             return;
         }
-        let new_i = match self.list_state.selected() {
+        let new_i = match self.table_state.selected() {
             Some(0) | None => self.logs.len() - 1,
             Some(i) => i - 1,
         };
-        self.list_state.select(Some(new_i));
+        self.table_state.select(Some(new_i));
     }
 
     fn nav_down(&mut self) {
         if self.logs.is_empty() {
             return;
         }
-        let new_i = match self.list_state.selected() {
+        let new_i = match self.table_state.selected() {
             Some(i) if i + 1 < self.logs.len() => i + 1,
             _ => 0,
         };
-        self.list_state.select(Some(new_i));
+        self.table_state.select(Some(new_i));
     }
 
     fn selected_raw_end_time(&self) -> Option<&str> {
-        self.list_state
+        self.table_state
             .selected()
             .and_then(|i| self.logs.get(i))
             .map(|(raw, _, _)| raw.as_str())
@@ -402,7 +401,7 @@ fn run_app(
 ) -> AppResult<()> {
     let tasks_raw = db::get_all_tasks(conn, id_filter)?;
     let mut app = App::new(tasks_raw, sort_col);
-    let refresh_interval = StdDuration::from_secs(10);
+    let refresh_interval = StdDuration::from_secs(1);
     let mut last_refresh = Instant::now();
 
     loop {
@@ -511,8 +510,15 @@ fn run_app(
         }
 
         if last_refresh.elapsed() >= refresh_interval {
-            if matches!(app.app_state, AppState::Normal | AppState::ConfirmDelete(_)) {
-                app.refresh(conn)?;
+            match app.app_state {
+                AppState::Normal | AppState::ConfirmDelete(_) => {
+                    app.refresh(conn)?;
+                }
+                AppState::History => {
+                    if let Some(hv) = &mut app.history_view {
+                        hv.refresh(conn)?;
+                    }
+                }
             }
             last_refresh = Instant::now();
         }
@@ -677,95 +683,80 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // Split inner: stats bar (3 lines) + log list
+    // Split inner: stats bar (2 lines) + table
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
         .split(inner);
 
     // ── Stats ──
-    let stats_para = if let Some((avg, min, max)) = hv.stats() {
+    let stats_line = if let Some((avg, min, max)) = hv.stats() {
         let avg_str = format_duration(Duration::milliseconds(avg));
         let min_str = format_duration(Duration::milliseconds(min));
         let max_str = format_duration(Duration::milliseconds(max));
-        Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled("  Avg duration: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(avg_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                Span::styled("   Min: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(min_str, Style::default().fg(Color::Green)),
-                Span::styled("   Max: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(max_str, Style::default().fg(Color::Yellow)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(
-                    "    #   Completed At              Duration      Time Ago",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-                ),
-            ]),
+        Line::from(vec![
+            Span::styled("  Avg: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(avg_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("   Min: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(min_str, Style::default().fg(Color::Green)),
+            Span::styled("   Max: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(max_str, Style::default().fg(Color::Yellow)),
         ])
     } else {
-        Paragraph::new(vec![
-            Line::from(Span::styled(
-                "  No run history recorded.",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(
-                    "    #   Completed At              Duration      Time Ago",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-        ])
+        Line::from(Span::styled("  No run history recorded.", Style::default().fg(Color::DarkGray)))
     };
-    f.render_widget(stats_para, chunks[0]);
+    f.render_widget(Paragraph::new(vec![stats_line, Line::from("")]), chunks[0]);
 
-    // ── Log list ──
-    let items: Vec<ListItem> = if hv.logs.is_empty() {
-        vec![ListItem::new(Line::from(Span::styled(
-            "  No log entries found.",
-            Style::default().fg(Color::DarkGray),
-        )))]
+    // ── History table ──
+    let header_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("#").style(header_style),
+        Cell::from("Completed At").style(header_style),
+        Cell::from("Duration").style(header_style),
+        Cell::from("Time Ago").style(header_style),
+    ])
+    .height(1)
+    .bottom_margin(0);
+
+    let rows: Vec<Row> = if hv.logs.is_empty() {
+        vec![Row::new(vec![
+            Cell::from(""),
+            Cell::from("No log entries found.").style(Style::default().fg(Color::DarkGray)),
+        ])]
     } else {
         hv.logs
             .iter()
             .enumerate()
             .map(|(i, (_, end_time, elapsed_ms))| {
-                let run_num = i + 1;
                 let ago = now.signed_duration_since(*end_time);
-                let ago_str = format_ago(ago);
-                let elapsed_str = format_duration(Duration::milliseconds(*elapsed_ms));
-                let date_str = end_time
-                    .with_timezone(&Local)
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string();
                 let color = log_entry_color(ago);
-
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:>3}  ", run_num),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::styled(date_str, Style::default().fg(color)),
-                    Span::raw("   "),
-                    Span::styled(
-                        format!("{:<12}", elapsed_str),
-                        Style::default().fg(Color::White),
-                    ),
-                    Span::styled(ago_str, Style::default().fg(Color::DarkGray)),
+                Row::new(vec![
+                    Cell::from(format!("{:>3}", i + 1)).style(Style::default().fg(Color::DarkGray)),
+                    Cell::from(
+                        end_time.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string(),
+                    )
+                    .style(Style::default().fg(color)),
+                    Cell::from(format_duration(Duration::milliseconds(*elapsed_ms)))
+                        .style(Style::default().fg(Color::White)),
+                    Cell::from(format_ago(ago)).style(Style::default().fg(Color::DarkGray)),
                 ])
-                .into()
             })
             .collect()
     };
 
-    let list = List::new(items)
+    let widths = [
+        Constraint::Length(4),
+        Constraint::Length(21),
+        Constraint::Length(12),
+        Constraint::Fill(1),
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(header)
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
-    f.render_stateful_widget(list, chunks[1], &mut hv.list_state);
+    f.render_stateful_widget(table, chunks[1], &mut hv.table_state);
 }
 
 fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
