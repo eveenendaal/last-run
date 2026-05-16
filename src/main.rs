@@ -13,6 +13,7 @@ use display::{print_task_logs, print_task_status_json, run_tui, SortCol, BOLD, G
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
+use std::io::{self, Write};
 use std::process;
 
 fn require_id(id: &str) -> AppResult<()> {
@@ -213,6 +214,72 @@ fn main() -> AppResult<()> {
                 );
             }
         }
+        Commands::Archive { older_than, id, yes } => {
+            let duration = parse_duration(&older_than).map_err(AppError::DurationParse)?;
+            let cutoff = Utc::now() - duration;
+            let task_id_ref = id.as_deref();
+
+            let count = db::count_old_logs(&conn, &cutoff, task_id_ref)?;
+
+            if count == 0 {
+                if !cli.quiet {
+                    println!(
+                        "{}{}No log entries found older than {}.{}",
+                        BOLD, GREEN, older_than, RESET
+                    );
+                }
+                return Ok(());
+            }
+
+            if !cli.quiet {
+                let scope = match &id {
+                    Some(task_id) => format!(" for task {WHITE}{task_id}{GREEN}"),
+                    None => String::from(" across all tasks"),
+                };
+                println!(
+                    "{}{}Archive logs{scope}{}",
+                    BOLD, GREEN, RESET
+                );
+                println!(
+                    "  Keeping entries from: {}{}{}",
+                    WHITE,
+                    cutoff.format("%Y-%m-%d"),
+                    RESET
+                );
+                println!(
+                    "  Entries to delete:    {}{}{}{}",
+                    WHITE, BOLD, count, RESET
+                );
+                println!();
+            }
+
+            let confirmed = yes || {
+                print!("Permanently delete {count} log {entries}? [y/N]: ",
+                    entries = if count == 1 { "entry" } else { "entries" }
+                );
+                io::stdout().flush()?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+            };
+
+            if confirmed {
+                let deleted = db::delete_old_logs(&conn, &cutoff, task_id_ref)?;
+                if !cli.quiet {
+                    println!(
+                        "{}{}Deleted {} log {}.{}",
+                        BOLD,
+                        GREEN,
+                        deleted,
+                        if deleted == 1 { "entry" } else { "entries" },
+                        RESET
+                    );
+                }
+            } else if !cli.quiet {
+                println!("{}Cancelled.{}", RED, RESET);
+            }
+        }
+
         // Add a new subcommand for completions
         Commands::Completion { shell } => {
             cli::generate_completions(shell);
