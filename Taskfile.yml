@@ -5,14 +5,6 @@ tasks:
     desc: Clean the output directory
     cmds:
       - cargo clean
-  archive.releases:
-    desc: Archive the releases
-    cmds:
-      - |
-        # Keep only the 3 most recent releases
-        for i in $(gh release list --json tagName -q .[].tagName | tail -n +4); do
-          gh release delete "$i" -y;
-        done
   test:
     desc: Run tests
     cmds:
