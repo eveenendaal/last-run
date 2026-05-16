@@ -182,6 +182,42 @@ pub fn delete_task_logs(conn: &Connection, task_id: &str) -> AppResult<usize> {
     Ok(rows_affected)
 }
 
+/// Get log entries for a single task, returning the raw end_time string alongside parsed values.
+/// Returns Vec<(raw_end_time, end_time, elapsed_ms)> ordered newest first.
+pub fn get_task_log_entries(
+    conn: &Connection,
+    task_id: &str,
+) -> AppResult<Vec<(String, DateTime<Utc>, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT end_time, elapsed_time FROM task_log WHERE id = ? ORDER BY end_time DESC",
+    )?;
+
+    let raw_rows: Vec<(String, i64)> = stmt
+        .query_map([task_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    raw_rows
+        .into_iter()
+        .map(|(end_time_str, elapsed_time)| {
+            let end_time = DateTime::parse_from_rfc3339(&end_time_str)
+                .map_err(crate::error::AppError::DateParse)?
+                .with_timezone(&Utc);
+            Ok((end_time_str, end_time, elapsed_time))
+        })
+        .collect()
+}
+
+/// Delete a single log entry for a task by its end_time key
+pub fn delete_task_log_entry(conn: &Connection, task_id: &str, end_time_str: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute(
+        "DELETE FROM task_log WHERE id = ? AND end_time = ?",
+        rusqlite::params![task_id, end_time_str],
+    )?;
+    Ok(rows_affected)
+}
+
 /// Delete a task record
 pub fn delete_task(conn: &Connection, task_id: &str) -> AppResult<usize> {
     let rows_affected = conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])?;

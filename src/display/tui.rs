@@ -12,7 +12,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{block::Title, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, TableState},
+    widgets::{
+        block::Title, Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState,
+        Paragraph, Row, Table, TableState,
+    },
     Frame, Terminal,
 };
 use rusqlite::Connection;
@@ -38,6 +41,80 @@ struct TaskRow {
 enum AppState {
     Normal,
     ConfirmDelete(String),
+    History,
+}
+
+// Holds state for the history panel (shown when AppState::History)
+struct HistoryView {
+    task_id: String,
+    // (raw_end_time_str, end_time, elapsed_ms) — raw string is used for deletion
+    logs: Vec<(String, DateTime<Utc>, i64)>,
+    list_state: ListState,
+    confirm_delete: Option<String>, // raw end_time_str of the entry to delete
+}
+
+impl HistoryView {
+    fn load(conn: &Connection, task_id: String) -> AppResult<Self> {
+        let logs = db::get_task_log_entries(conn, &task_id)?;
+        let mut list_state = ListState::default();
+        if !logs.is_empty() {
+            list_state.select(Some(0));
+        }
+        Ok(Self { task_id, logs, list_state, confirm_delete: None })
+    }
+
+    fn refresh(&mut self, conn: &Connection) -> AppResult<()> {
+        let selected_raw = self.selected_raw_end_time().map(|s| s.to_string());
+        self.logs = db::get_task_log_entries(conn, &self.task_id)?;
+        let new_idx = selected_raw.as_deref().and_then(|raw| {
+            self.logs.iter().position(|(r, _, _)| r == raw)
+        });
+        self.list_state.select(new_idx.or_else(|| {
+            if self.logs.is_empty() { None } else { Some(0) }
+        }));
+        Ok(())
+    }
+
+    fn nav_up(&mut self) {
+        if self.logs.is_empty() {
+            return;
+        }
+        let new_i = match self.list_state.selected() {
+            Some(0) | None => self.logs.len() - 1,
+            Some(i) => i - 1,
+        };
+        self.list_state.select(Some(new_i));
+    }
+
+    fn nav_down(&mut self) {
+        if self.logs.is_empty() {
+            return;
+        }
+        let new_i = match self.list_state.selected() {
+            Some(i) if i + 1 < self.logs.len() => i + 1,
+            _ => 0,
+        };
+        self.list_state.select(Some(new_i));
+    }
+
+    fn selected_raw_end_time(&self) -> Option<&str> {
+        self.list_state
+            .selected()
+            .and_then(|i| self.logs.get(i))
+            .map(|(raw, _, _)| raw.as_str())
+    }
+
+    fn stats(&self) -> Option<(i64, i64, i64)> {
+        // (avg_ms, min_ms, max_ms)
+        if self.logs.is_empty() {
+            return None;
+        }
+        let sum: i64 = self.logs.iter().map(|(_, _, ms)| ms).sum();
+        let avg = sum / self.logs.len() as i64;
+        let min = self.logs.iter().map(|(_, _, ms)| *ms).min().unwrap();
+        let max = self.logs.iter().map(|(_, _, ms)| *ms).max().unwrap();
+        Some((avg, min, max))
+    }
 }
 
 struct App {
@@ -47,6 +124,7 @@ struct App {
     sort_asc: bool,
     app_state: AppState,
     last_updated: DateTime<Utc>,
+    history_view: Option<HistoryView>,
 }
 
 impl App {
@@ -71,6 +149,7 @@ impl App {
             sort_asc: true,
             app_state: AppState::Normal,
             last_updated: Utc::now(),
+            history_view: None,
         };
         app.sort();
         if !app.tasks.is_empty() {
@@ -111,7 +190,6 @@ impl App {
 
     fn sort(&mut self) {
         let now = Utc::now();
-        // Always sort ascending first, then reverse if needed. None always sorts last.
         match self.sort_col {
             SortCol::Task => self.tasks.sort_by(|a, b| a.id.cmp(&b.id)),
             SortCol::Status => {
@@ -197,6 +275,14 @@ impl App {
             .and_then(|i| self.tasks.get(i))
             .map(|t| t.id.clone())
     }
+
+    fn open_history(&mut self, conn: &Connection) -> AppResult<()> {
+        if let Some(id) = self.selected_id() {
+            self.history_view = Some(HistoryView::load(conn, id)?);
+            self.app_state = AppState::History;
+        }
+        Ok(())
+    }
 }
 
 fn task_status_order(task: &TaskRow, now: &DateTime<Utc>) -> u8 {
@@ -253,6 +339,38 @@ fn task_status_str(task: &TaskRow, now: &DateTime<Utc>) -> &'static str {
     }
 }
 
+fn format_ago(ago: Duration) -> String {
+    let secs = ago.num_seconds().abs();
+    if secs < 60 {
+        format!("{}s ago", secs)
+    } else if secs < 3600 {
+        let m = secs / 60;
+        let s = secs % 60;
+        if s == 0 { format!("{}m ago", m) } else { format!("{}m{}s ago", m, s) }
+    } else if secs < 86400 {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        if m == 0 { format!("{}h ago", h) } else { format!("{}h{}m ago", h, m) }
+    } else {
+        let d = secs / 86400;
+        let h = (secs % 86400) / 3600;
+        if h == 0 { format!("{}d ago", d) } else { format!("{}d{}h ago", d, h) }
+    }
+}
+
+fn log_entry_color(ago: Duration) -> Color {
+    let secs = ago.num_seconds();
+    if secs < 3600 {
+        Color::LightGreen
+    } else if secs < 86400 {
+        Color::Green
+    } else if secs < 86400 * 7 {
+        Color::Yellow
+    } else {
+        Color::Gray
+    }
+}
+
 pub fn run_tui(conn: &Connection, id_filter: Option<String>, sort_col: SortCol) -> AppResult<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -292,7 +410,61 @@ fn run_app(
 
         if event::poll(StdDuration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
-                if matches!(app.app_state, AppState::Normal) {
+                let in_history = matches!(app.app_state, AppState::History);
+                let confirming_log =
+                    app.history_view.as_ref().map(|hv| hv.confirm_delete.is_some()).unwrap_or(false);
+
+                if in_history {
+                    if confirming_log {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                if let Some(hv) = &mut app.history_view {
+                                    if let Some(raw) = hv.confirm_delete.take() {
+                                        let task_id = hv.task_id.clone();
+                                        db::delete_task_log_entry(conn, &task_id, &raw)?;
+                                        hv.refresh(conn)?;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.confirm_delete = None;
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.app_state = AppState::Normal;
+                                app.history_view = None;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.nav_up();
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.nav_down();
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(hv) = &mut app.history_view {
+                                    if let Some(raw) = hv.selected_raw_end_time() {
+                                        hv.confirm_delete = Some(raw.to_string());
+                                    }
+                                }
+                            }
+                            KeyCode::Char('r') => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.refresh(conn)?;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else if matches!(app.app_state, AppState::Normal) {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                         KeyCode::Up | KeyCode::Char('k') => app.nav_up(),
@@ -309,9 +481,13 @@ fn run_app(
                                 app.app_state = AppState::ConfirmDelete(id);
                             }
                         }
+                        KeyCode::Enter | KeyCode::Char('h') => {
+                            app.open_history(conn)?;
+                        }
                         _ => {}
                     }
                 } else {
+                    // ConfirmDelete state
                     let task_id = if let AppState::ConfirmDelete(ref id) = app.app_state {
                         id.clone()
                     } else {
@@ -335,7 +511,9 @@ fn run_app(
         }
 
         if last_refresh.elapsed() >= refresh_interval {
-            app.refresh(conn)?;
+            if matches!(app.app_state, AppState::Normal | AppState::ConfirmDelete(_)) {
+                app.refresh(conn)?;
+            }
             last_refresh = Instant::now();
         }
     }
@@ -348,12 +526,29 @@ fn draw(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(f.area());
 
-    draw_table(f, app, chunks[0], &now);
-    draw_controls(f, chunks[1]);
-
-    if let AppState::ConfirmDelete(ref id) = app.app_state {
-        let id = id.clone();
-        draw_confirm_popup(f, &id);
+    match app.app_state {
+        AppState::Normal => {
+            draw_table(f, app, chunks[0], &now);
+            draw_controls(f, chunks[1], false);
+        }
+        AppState::ConfirmDelete(ref id) => {
+            let id = id.clone();
+            draw_table(f, app, chunks[0], &now);
+            draw_controls(f, chunks[1], false);
+            draw_confirm_task_popup(f, &id);
+        }
+        AppState::History => {
+            if let Some(ref mut hv) = app.history_view {
+                draw_history(f, hv, chunks[0], &now);
+            }
+            draw_controls(f, chunks[1], true);
+            // Confirm-delete-log popup (rendered on top)
+            if let Some(ref hv) = app.history_view {
+                if let Some(ref raw) = hv.confirm_delete {
+                    draw_confirm_log_popup(f, &hv.task_id, raw, &now);
+                }
+            }
+        }
     }
 }
 
@@ -462,19 +657,141 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
     f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
-fn draw_controls(f: &mut Frame, area: Rect) {
-    let key_style = Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<Utc>) {
+    let total = hv.logs.len();
+    let title_right = format!(" {} run{} ", total, if total == 1 { "" } else { "s" });
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(Title::from(Span::styled(
+            format!(" Task History: {} ", hv.task_id),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )))
+        .title(
+            Title::from(Span::styled(title_right, Style::default().fg(Color::DarkGray)))
+                .alignment(Alignment::Right),
+        );
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split inner: stats bar (3 lines) + log list
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    // ── Stats ──
+    let stats_para = if let Some((avg, min, max)) = hv.stats() {
+        let avg_str = format_duration(Duration::milliseconds(avg));
+        let min_str = format_duration(Duration::milliseconds(min));
+        let max_str = format_duration(Duration::milliseconds(max));
+        Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("  Avg duration: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(avg_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("   Min: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(min_str, Style::default().fg(Color::Green)),
+                Span::styled("   Max: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(max_str, Style::default().fg(Color::Yellow)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    "    #   Completed At              Duration      Time Ago",
+                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+        ])
+    } else {
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                "  No run history recorded.",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    "    #   Completed At              Duration      Time Ago",
+                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+        ])
+    };
+    f.render_widget(stats_para, chunks[0]);
+
+    // ── Log list ──
+    let items: Vec<ListItem> = if hv.logs.is_empty() {
+        vec![ListItem::new(Line::from(Span::styled(
+            "  No log entries found.",
+            Style::default().fg(Color::DarkGray),
+        )))]
+    } else {
+        hv.logs
+            .iter()
+            .enumerate()
+            .map(|(i, (_, end_time, elapsed_ms))| {
+                let run_num = i + 1;
+                let ago = now.signed_duration_since(*end_time);
+                let ago_str = format_ago(ago);
+                let elapsed_str = format_duration(Duration::milliseconds(*elapsed_ms));
+                let date_str = end_time
+                    .with_timezone(&Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string();
+                let color = log_entry_color(ago);
+
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:>3}  ", run_num),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(date_str, Style::default().fg(color)),
+                    Span::raw("   "),
+                    Span::styled(
+                        format!("{:<12}", elapsed_str),
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(ago_str, Style::default().fg(Color::DarkGray)),
+                ])
+                .into()
+            })
+            .collect()
+    };
+
+    let list = List::new(items)
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .highlight_symbol("▶ ");
+
+    f.render_stateful_widget(list, chunks[1], &mut hv.list_state);
+}
+
+fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
+    let key_style =
+        Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::Gray);
     let sep_style = Style::default().fg(Color::DarkGray);
 
-    let shortcuts: &[(&str, &str)] = &[
-        ("↑↓ / jk", "Navigate"),
-        ("←→ / Tab", "Sort Column"),
-        ("s", "Toggle Order"),
-        ("d", "Delete"),
-        ("r", "Refresh"),
-        ("q / Esc", "Quit"),
-    ];
+    let shortcuts: &[(&str, &str)] = if in_history {
+        &[
+            ("↑↓ / jk", "Navigate"),
+            ("d", "Delete Entry"),
+            ("r", "Refresh"),
+            ("q / Esc", "Back"),
+        ]
+    } else {
+        &[
+            ("↑↓ / jk", "Navigate"),
+            ("←→ / Tab", "Sort Column"),
+            ("s", "Toggle Order"),
+            ("Enter / h", "History"),
+            ("d", "Delete Task"),
+            ("r", "Refresh"),
+            ("q / Esc", "Quit"),
+        ]
+    };
 
     let mut spans: Vec<Span> = vec![Span::raw("  ")];
     for (i, (key, desc)) in shortcuts.iter().enumerate() {
@@ -498,9 +815,9 @@ fn draw_controls(f: &mut Frame, area: Rect) {
     );
 }
 
-fn draw_confirm_popup(f: &mut Frame, task_id: &str) {
+fn draw_confirm_task_popup(f: &mut Frame, task_id: &str) {
     let area = f.area();
-    let content = format!(" Delete \"{}\"?  [y] Yes   [n] No ", task_id);
+    let content = format!(" Delete \"{}\" and all its history?  [y] Yes   [n] No ", task_id);
     let popup_width = (content.len() as u16 + 4).min(area.width.saturating_sub(4)).max(30);
     let popup_height = 3u16;
     let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
@@ -516,7 +833,47 @@ fn draw_confirm_popup(f: &mut Frame, task_id: &str) {
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Red))
                     .title(Span::styled(
-                        " Confirm Delete ",
+                        " Confirm Delete Task ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .alignment(Alignment::Center),
+        popup_area,
+    );
+}
+
+fn draw_confirm_log_popup(f: &mut Frame, task_id: &str, raw_end_time: &str, now: &DateTime<Utc>) {
+    // Parse the raw string for display; fall back to the raw string if it fails
+    let display_time = DateTime::parse_from_rfc3339(raw_end_time)
+        .ok()
+        .map(|dt| {
+            let ago = now.signed_duration_since(dt.with_timezone(&Utc));
+            format!(
+                "{} ({})",
+                dt.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S"),
+                format_ago(ago),
+            )
+        })
+        .unwrap_or_else(|| raw_end_time.to_string());
+
+    let area = f.area();
+    let content = format!(" Delete entry from {}?  [y] Yes   [n] No ", display_time);
+    let popup_width = (content.len() as u16 + 4).min(area.width.saturating_sub(4)).max(40);
+    let popup_height = 3u16;
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(
+        Paragraph::new(content)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Color::Red))
+                    .title(Span::styled(
+                        format!(" Delete Log Entry — {} ", task_id),
                         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                     )),
             )
