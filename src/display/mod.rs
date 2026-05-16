@@ -1,8 +1,10 @@
 pub mod json;
 pub mod table;
+pub mod tui;
 
 pub use json::print_task_status_json;
-pub use table::{print_task_logs, print_task_status};
+pub use table::print_task_logs;
+pub use tui::{run_tui, SortCol};
 
 // ANSI color constants
 pub const BOLD: &str = "\x1b[1m";

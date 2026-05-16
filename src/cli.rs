@@ -20,12 +20,11 @@ pub enum Shell {
 
 #[derive(ValueEnum, Clone, Debug)]
 pub enum SortColumn {
-    Id,
-    LastRun,
-    TimeSinceLastRun,
-    Started,
-    Elapsed,
+    Task,
+    Status,
     Duration,
+    Elapsed,
+    LastRun,
 }
 
 #[derive(Subcommand)]
@@ -79,12 +78,8 @@ pub enum Commands {
         #[arg(short, long)]
         id: Option<String>,
 
-        /// Continuously monitor the status
-        #[arg(short, long)]
-        watch: bool,
-
-        /// Column to sort by (id, last_run, time_since_last_run, started, elapsed, duration)
-        #[arg(short, long, value_enum, default_value_t = SortColumn::Id)]
+        /// Column to sort by (task, status, duration, elapsed, last-run)
+        #[arg(short, long, value_enum, default_value_t = SortColumn::LastRun)]
         sort: SortColumn,
 
         /// Output status in JSON format

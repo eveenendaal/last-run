@@ -9,13 +9,11 @@ use chrono::Utc;
 use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
 use db::update_task_duration;
-use display::{print_task_logs, print_task_status, print_task_status_json, BOLD, GREEN, RED, RESET, WHITE};
+use display::{print_task_logs, print_task_status_json, run_tui, SortCol, BOLD, GREEN, RED, RESET, WHITE};
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
-use std::io::{self, Write};
 use std::process;
-use std::{thread, time::Duration};
 
 fn require_id(id: &str) -> AppResult<()> {
     if id.is_empty() {
@@ -145,37 +143,21 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Status { id, watch, sort, json } => {
-            let draw_interval_ms = 100;
-            let clear_interval_secs = 5;
-            let interval = Duration::from_millis(draw_interval_ms);
-            let clears_every = (clear_interval_secs * 1000) / draw_interval_ms;
-            let mut first = true;
-            let mut ticks = 0;
-            loop {
-                if watch && !json {
-                    if first || ticks % clears_every == 0 {
-                        print!("\x1B[2J\x1B[H");
-                        first = false;
-                    } else {
-                        print!("\x1B[H");
-                    }
-                    io::stdout().flush().unwrap();
-                }
-
-                let tasks = db::get_all_tasks(&conn, id.as_ref().cloned())?;
+        Commands::Status { id, sort, json } => {
+            if json {
+                let tasks = db::get_all_tasks(&conn, id)?;
                 if !cli.quiet {
-                    if json {
-                        print_task_status_json(&tasks);
-                    } else {
-                        print_task_status(&tasks, &sort);
-                    }
+                    print_task_status_json(&tasks);
                 }
-                if !watch || json {
-                    break;
-                }
-                thread::sleep(interval);
-                ticks += 1;
+            } else {
+                let sort_col = match sort {
+                    cli::SortColumn::Task => SortCol::Task,
+                    cli::SortColumn::Status => SortCol::Status,
+                    cli::SortColumn::Duration => SortCol::Duration,
+                    cli::SortColumn::Elapsed => SortCol::Elapsed,
+                    cli::SortColumn::LastRun => SortCol::LastRun,
+                };
+                run_tui(&conn, id, sort_col)?;
             }
         }
 
