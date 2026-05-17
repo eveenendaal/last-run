@@ -668,7 +668,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         )))
         .title(
-            Title::from(Span::styled(updated, Style::default().fg(Color::DarkGray)))
+            Title::from(Span::styled(updated, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
                 .alignment(Alignment::Right),
         );
 
@@ -767,7 +767,7 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         )))
         .title(
-            Title::from(Span::styled(title_right, Style::default().fg(Color::DarkGray)))
+            Title::from(Span::styled(title_right, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
                 .alignment(Alignment::Right),
         );
 
@@ -820,13 +820,12 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
             .enumerate()
             .map(|(i, (_, end_time, elapsed_ms))| {
                 let ago = now.signed_duration_since(*end_time);
-                let color = log_entry_color(ago);
                 Row::new(vec![
                     Cell::from(format!("{:>3}", i + 1)).style(Style::default().fg(Color::DarkGray)),
                     Cell::from(
                         end_time.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string(),
                     )
-                    .style(Style::default().fg(color)),
+                    .style(Style::default().fg(log_entry_color(ago)).add_modifier(Modifier::BOLD)),
                     Cell::from(format_duration(Duration::milliseconds(*elapsed_ms)))
                         .style(Style::default().fg(Color::White)),
                     Cell::from(format_ago(ago)).style(Style::default().fg(Color::DarkGray)),
