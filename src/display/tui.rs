@@ -345,6 +345,19 @@ fn elapsed_millis(task: &TaskRow, now: &DateTime<Utc>) -> i64 {
     }
 }
 
+fn log_entry_color(ago: Duration) -> Color {
+    let secs = ago.num_seconds();
+    if secs < 3600 {
+        Color::LightGreen
+    } else if secs < 86400 {
+        Color::Green
+    } else if secs < 86400 * 7 {
+        Color::Yellow
+    } else {
+        Color::Gray
+    }
+}
+
 fn task_color(task: &TaskRow, now: &DateTime<Utc>) -> Color {
     if task.start_time.is_some() && task.last_run.is_none() {
         Color::Yellow
@@ -396,18 +409,6 @@ fn format_ago(ago: Duration) -> String {
     }
 }
 
-fn log_entry_color(ago: Duration) -> Color {
-    let secs = ago.num_seconds();
-    if secs < 3600 {
-        Color::LightGreen
-    } else if secs < 86400 {
-        Color::Green
-    } else if secs < 86400 * 7 {
-        Color::Yellow
-    } else {
-        Color::Gray
-    }
-}
 
 pub fn run_tui(conn: &Connection, id_filter: Option<String>, sort_col: SortCol) -> AppResult<()> {
     enable_raw_mode()?;
@@ -653,9 +654,9 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
 
     let right_pad = "─".repeat(if area.width < 60 { 3 } else if area.width < 100 { 2 } else { 1 });
     let updated = if area.width >= 50 {
-        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S"), right_pad)
+        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S "), right_pad)
     } else {
-        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%H:%M:%S"), right_pad)
+        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%H:%M:%S "), right_pad)
     };
 
     let block = Block::default()
@@ -755,15 +756,15 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
 fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<Utc>) {
     let total = hv.logs.len();
     let right_pad = "─".repeat(if area.width < 60 { 3 } else if area.width < 100 { 2 } else { 1 });
-    let title_right = format!(" {} run{}{}─", total, if total == 1 { "" } else { "s" }, right_pad);
+    let title_right = format!(" {} run{} {}", total, if total == 1 { "" } else { "s" }, right_pad);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(Color::DarkGray))
         .title(Title::from(Span::styled(
-            format!(" Task History: {} ─", hv.task_id),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            format!(" Task History: {} ", hv.task_id),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         )))
         .title(
             Title::from(Span::styled(title_right, Style::default().fg(Color::DarkGray)))
