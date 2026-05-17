@@ -527,9 +527,11 @@ fn run_app(
 
 fn draw(f: &mut Frame, app: &mut App) {
     let now = Utc::now();
+    let in_history = matches!(app.app_state, AppState::History);
+    let ctrl_h = controls_height(f.area().width, in_history);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .constraints([Constraint::Min(0), Constraint::Length(ctrl_h)])
         .split(f.area());
 
     match app.app_state {
@@ -576,10 +578,11 @@ fn header_cell(label: &str, col: SortCol, active: SortCol, asc: bool) -> Cell<'s
 fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
     let sc = app.sort_col;
 
-    let updated = format!(
-        " {} ",
-        app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S")
-    );
+    let updated = if area.width >= 50 {
+        format!(" {} ", app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S"))
+    } else {
+        format!(" {} ", app.last_updated.with_timezone(&Local).format("%H:%M:%S"))
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -759,13 +762,8 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
     f.render_stateful_widget(table, chunks[1], &mut hv.table_state);
 }
 
-fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
-    let key_style =
-        Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
-    let desc_style = Style::default().fg(Color::Gray);
-    let sep_style = Style::default().fg(Color::DarkGray);
-
-    let shortcuts: &[(&str, &str)] = if in_history {
+fn get_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
+    if in_history {
         &[
             ("↑↓/jk", "Navigate"),
             ("d", "Delete Entry"),
@@ -782,16 +780,67 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
             ("r", "Refresh"),
             ("q/Esc", "Quit"),
         ]
-    };
+    }
+}
 
-    let mut spans: Vec<Span> = vec![Span::raw("  ")];
-    for (i, (key, desc)) in shortcuts.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled("  ", sep_style));
+fn controls_height(terminal_width: u16, in_history: bool) -> u16 {
+    let shortcuts = get_shortcuts(in_history);
+    let content_width = terminal_width.saturating_sub(2) as usize;
+    let mut lines = 1u16;
+    let mut current_width = 2usize; // leading spaces
+    let mut first_on_line = true;
+
+    for (key, desc) in shortcuts.iter() {
+        let sep = if first_on_line { 0 } else { 2 };
+        let item_width = sep + key.chars().count() + 2 + 1 + desc.chars().count();
+        if !first_on_line && current_width + item_width > content_width {
+            lines += 1;
+            current_width = 2 + key.chars().count() + 2 + 1 + desc.chars().count();
+            first_on_line = true;
+        } else {
+            current_width += item_width;
+            first_on_line = false;
         }
-        spans.push(Span::styled(format!(" {} ", key), key_style));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(*desc, desc_style));
+    }
+
+    lines + 2 // +2 for borders
+}
+
+fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
+    let key_style =
+        Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let desc_style = Style::default().fg(Color::Gray);
+    let sep_style = Style::default().fg(Color::DarkGray);
+
+    let shortcuts = get_shortcuts(in_history);
+    let content_width = area.width.saturating_sub(2) as usize;
+
+    let mut lines: Vec<Line> = vec![];
+    let mut current_spans: Vec<Span> = vec![Span::raw("  ")];
+    let mut current_width = 2usize;
+    let mut first_on_line = true;
+
+    for (key, desc) in shortcuts.iter() {
+        let sep = if first_on_line { 0 } else { 2 };
+        let item_width = sep + key.chars().count() + 2 + 1 + desc.chars().count();
+        if !first_on_line && current_width + item_width > content_width {
+            lines.push(Line::from(std::mem::take(&mut current_spans)));
+            current_spans = vec![Span::raw("  ")];
+            current_width = 2;
+            first_on_line = true;
+        }
+        if !first_on_line {
+            current_spans.push(Span::styled("  ", sep_style));
+            current_width += 2;
+        }
+        current_spans.push(Span::styled(format!(" {} ", key), key_style));
+        current_spans.push(Span::raw(" "));
+        current_spans.push(Span::styled(*desc, desc_style));
+        current_width += key.chars().count() + 2 + 1 + desc.chars().count();
+        first_on_line = false;
+    }
+    if !current_spans.is_empty() {
+        lines.push(Line::from(current_spans));
     }
 
     let block = Block::default()
@@ -800,10 +849,7 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
         .border_style(Style::default().fg(Color::DarkGray))
         .title(Span::styled(" Keys ", Style::default().fg(Color::White)));
 
-    f.render_widget(
-        Paragraph::new(Line::from(spans)).block(block),
-        area,
-    );
+    f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn draw_confirm_task_popup(f: &mut Frame, task_id: &str) {
