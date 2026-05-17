@@ -722,13 +722,23 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
             .collect()
     };
 
-    let widths = [
-        Constraint::Fill(1),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Length(12),
-        Constraint::Length(12),
-    ];
+    let widths = if area.width < 60 {
+        [
+            Constraint::Fill(1),
+            Constraint::Length(8),
+            Constraint::Length(7),
+            Constraint::Length(7),
+            Constraint::Length(7),
+        ]
+    } else {
+        [
+            Constraint::Fill(1),
+            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Length(12),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)
