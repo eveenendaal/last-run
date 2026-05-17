@@ -50,6 +50,7 @@ struct HistoryView {
     logs: Vec<(String, DateTime<Utc>, i64)>,
     table_state: TableState,
     confirm_delete: Option<String>, // raw end_time_str of the entry to delete
+    page_size: usize,
 }
 
 impl HistoryView {
@@ -59,7 +60,7 @@ impl HistoryView {
         if !logs.is_empty() {
             table_state.select(Some(0));
         }
-        Ok(Self { task_id, logs, table_state, confirm_delete: None })
+        Ok(Self { task_id, logs, table_state, confirm_delete: None, page_size: 10 })
     }
 
     fn refresh(&mut self, conn: &Connection) -> AppResult<()> {
@@ -96,6 +97,23 @@ impl HistoryView {
         self.table_state.select(Some(new_i));
     }
 
+    fn page_up(&mut self) {
+        if self.logs.is_empty() {
+            return;
+        }
+        let new_i = self.table_state.selected().unwrap_or(0).saturating_sub(self.page_size.max(1));
+        self.table_state.select(Some(new_i));
+    }
+
+    fn page_down(&mut self) {
+        if self.logs.is_empty() {
+            return;
+        }
+        let new_i = (self.table_state.selected().unwrap_or(0) + self.page_size.max(1))
+            .min(self.logs.len() - 1);
+        self.table_state.select(Some(new_i));
+    }
+
     fn selected_raw_end_time(&self) -> Option<&str> {
         self.table_state
             .selected()
@@ -124,6 +142,8 @@ struct App {
     app_state: AppState,
     last_updated: DateTime<Utc>,
     history_view: Option<HistoryView>,
+    show_help: bool,
+    page_size: usize,
 }
 
 impl App {
@@ -149,6 +169,8 @@ impl App {
             app_state: AppState::Normal,
             last_updated: Utc::now(),
             history_view: None,
+            show_help: false,
+            page_size: 10,
         };
         app.sort();
         if !app.tasks.is_empty() {
@@ -243,6 +265,23 @@ impl App {
             Some(i) if i + 1 < self.tasks.len() => i + 1,
             _ => 0,
         };
+        self.table_state.select(Some(new_i));
+    }
+
+    fn page_up(&mut self) {
+        if self.tasks.is_empty() {
+            return;
+        }
+        let new_i = self.table_state.selected().unwrap_or(0).saturating_sub(self.page_size.max(1));
+        self.table_state.select(Some(new_i));
+    }
+
+    fn page_down(&mut self) {
+        if self.tasks.is_empty() {
+            return;
+        }
+        let new_i = (self.table_state.selected().unwrap_or(0) + self.page_size.max(1))
+            .min(self.tasks.len() - 1);
         self.table_state.select(Some(new_i));
     }
 
@@ -409,6 +448,17 @@ fn run_app(
 
         if event::poll(StdDuration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
+                // Help modal intercepts all keys
+                if app.show_help {
+                    match key.code {
+                        KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => {
+                            app.show_help = false;
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 let in_history = matches!(app.app_state, AppState::History);
                 let confirming_log =
                     app.history_view.as_ref().map(|hv| hv.confirm_delete.is_some()).unwrap_or(false);
@@ -448,6 +498,16 @@ fn run_app(
                                     hv.nav_down();
                                 }
                             }
+                            KeyCode::PageUp => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.page_up();
+                                }
+                            }
+                            KeyCode::PageDown => {
+                                if let Some(hv) = &mut app.history_view {
+                                    hv.page_down();
+                                }
+                            }
                             KeyCode::Char('d') => {
                                 if let Some(hv) = &mut app.history_view {
                                     if let Some(raw) = hv.selected_raw_end_time() {
@@ -460,6 +520,9 @@ fn run_app(
                                     hv.refresh(conn)?;
                                 }
                             }
+                            KeyCode::Char('?') => {
+                                app.show_help = true;
+                            }
                             _ => {}
                         }
                     }
@@ -468,6 +531,8 @@ fn run_app(
                         KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                         KeyCode::Up | KeyCode::Char('k') => app.nav_up(),
                         KeyCode::Down | KeyCode::Char('j') => app.nav_down(),
+                        KeyCode::PageUp => app.page_up(),
+                        KeyCode::PageDown => app.page_down(),
                         KeyCode::Right | KeyCode::Tab => app.cycle_sort_next(),
                         KeyCode::Left | KeyCode::BackTab => app.cycle_sort_prev(),
                         KeyCode::Char('s') => app.toggle_sort_order(),
@@ -482,6 +547,9 @@ fn run_app(
                         }
                         KeyCode::Enter | KeyCode::Char('h') => {
                             app.open_history(conn)?;
+                        }
+                        KeyCode::Char('?') => {
+                            app.show_help = true;
                         }
                         _ => {}
                     }
@@ -557,6 +625,11 @@ fn draw(f: &mut Frame, app: &mut App) {
                 }
             }
         }
+    }
+
+    if app.show_help {
+        let in_history = matches!(app.app_state, AppState::History);
+        draw_help_modal(f, in_history);
     }
 }
 
@@ -663,6 +736,8 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
+    // 2 borders + 1 header row + 1 header margin
+    app.page_size = (area.height.saturating_sub(4) as usize).max(1);
     f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
@@ -759,32 +834,51 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
+    // 2 borders (from outer block) + 2 stats lines + 1 header row
+    hv.page_size = (chunks[1].height.saturating_sub(1) as usize).max(1);
     f.render_stateful_widget(table, chunks[1], &mut hv.table_state);
 }
 
-fn get_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
+fn get_basic_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
+    if in_history {
+        &[("↑↓/jk", "Navigate"), ("?", "All Keys"), ("q/Esc", "Back")]
+    } else {
+        &[
+            ("↑↓/jk", "Navigate"),
+            ("Enter/h", "History"),
+            ("?", "All Keys"),
+            ("q/Esc", "Quit"),
+        ]
+    }
+}
+
+fn get_all_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
     if in_history {
         &[
             ("↑↓/jk", "Navigate"),
+            ("PgUp/PgDn", "Page"),
             ("d", "Delete Entry"),
             ("r", "Refresh"),
+            ("?", "Help"),
             ("q/Esc", "Back"),
         ]
     } else {
         &[
             ("↑↓/jk", "Navigate"),
+            ("PgUp/PgDn", "Page"),
             ("←→/Tab", "Sort"),
             ("s", "Toggle Order"),
             ("Enter/h", "History"),
             ("d", "Delete Task"),
             ("r", "Refresh"),
+            ("?", "Help"),
             ("q/Esc", "Quit"),
         ]
     }
 }
 
 fn controls_height(terminal_width: u16, in_history: bool) -> u16 {
-    let shortcuts = get_shortcuts(in_history);
+    let shortcuts = get_basic_shortcuts(in_history);
     let content_width = terminal_width.saturating_sub(2) as usize;
     let mut lines = 1u16;
     let mut current_width = 2usize; // leading spaces
@@ -812,7 +906,7 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
     let desc_style = Style::default().fg(Color::Gray);
     let sep_style = Style::default().fg(Color::DarkGray);
 
-    let shortcuts = get_shortcuts(in_history);
+    let shortcuts = get_basic_shortcuts(in_history);
     let content_width = area.width.saturating_sub(2) as usize;
 
     let mut lines: Vec<Line> = vec![];
@@ -850,6 +944,57 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
         .title(Span::styled(" Keys ", Style::default().fg(Color::White)));
 
     f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn draw_help_modal(f: &mut Frame, in_history: bool) {
+    let shortcuts = get_all_shortcuts(in_history);
+    let key_style =
+        Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let desc_style = Style::default().fg(Color::Gray);
+
+    let max_key_len = shortcuts.iter().map(|(k, _)| k.chars().count() + 2).max().unwrap_or(4);
+    let max_desc_len = shortcuts.iter().map(|(_, d)| d.chars().count()).max().unwrap_or(4);
+    let inner_width = (max_key_len + 1 + max_desc_len + 4) as u16;
+    let area = f.area();
+    let popup_width = (inner_width + 2).min(area.width.saturating_sub(4)).max(30);
+    let popup_height = (shortcuts.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    let lines: Vec<Line> = shortcuts
+        .iter()
+        .map(|(key, desc)| {
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!(" {} ", key), key_style),
+                Span::raw(" "),
+                Span::styled(*desc, desc_style),
+            ])
+        })
+        .collect();
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::White))
+                .title(Span::styled(
+                    " All Keys ",
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ))
+                .title(
+                    Title::from(Span::styled(
+                        " ? or Esc to close ",
+                        Style::default().fg(Color::DarkGray),
+                    ))
+                    .alignment(Alignment::Right),
+                ),
+        ),
+        popup_area,
+    );
 }
 
 fn draw_confirm_task_popup(f: &mut Frame, task_id: &str) {
