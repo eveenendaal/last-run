@@ -121,16 +121,26 @@ impl HistoryView {
             .map(|(raw, _, _)| raw.as_str())
     }
 
-    fn stats(&self) -> Option<(i64, i64, i64)> {
-        // (avg_ms, min_ms, max_ms)
+    fn stats(&self) -> Option<(i64, i64, i64, Option<i64>)> {
+        // (avg_ms, min_ms, max_ms, avg_frequency_ms)
         if self.logs.is_empty() {
             return None;
         }
+        let n = self.logs.len();
         let sum: i64 = self.logs.iter().map(|(_, _, ms)| ms).sum();
-        let avg = sum / self.logs.len() as i64;
+        let avg = sum / n as i64;
         let min = self.logs.iter().map(|(_, _, ms)| *ms).min().unwrap();
         let max = self.logs.iter().map(|(_, _, ms)| *ms).max().unwrap();
-        Some((avg, min, max))
+        // Logs are ordered newest-first; span from oldest to newest divided by (n-1) gaps
+        let avg_freq = if n >= 2 {
+            let newest = self.logs[0].1;
+            let oldest = self.logs[n - 1].1;
+            let span_ms = newest.signed_duration_since(oldest).num_milliseconds();
+            Some(span_ms / (n as i64 - 1))
+        } else {
+            None
+        };
+        Some((avg, min, max, avg_freq))
     }
 }
 
@@ -781,18 +791,24 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
         .split(inner);
 
     // ── Stats ──
-    let stats_line = if let Some((avg, min, max)) = hv.stats() {
+    let stats_line = if let Some((avg, min, max, avg_freq)) = hv.stats() {
         let avg_str = format_duration(Duration::milliseconds(avg));
         let min_str = format_duration(Duration::milliseconds(min));
         let max_str = format_duration(Duration::milliseconds(max));
-        Line::from(vec![
+        let mut spans = vec![
             Span::styled("  Avg: ", Style::default().fg(Color::DarkGray)),
             Span::styled(avg_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled("   Min: ", Style::default().fg(Color::DarkGray)),
             Span::styled(min_str, Style::default().fg(Color::Green)),
             Span::styled("   Max: ", Style::default().fg(Color::DarkGray)),
             Span::styled(max_str, Style::default().fg(Color::Yellow)),
-        ])
+        ];
+        if let Some(freq_ms) = avg_freq {
+            let freq_str = format_duration(Duration::milliseconds(freq_ms));
+            spans.push(Span::styled("   Freq: every ~", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(freq_str, Style::default().fg(Color::Cyan)));
+        }
+        Line::from(spans)
     } else {
         Line::from(Span::styled("  No run history recorded.", Style::default().fg(Color::DarkGray)))
     };
