@@ -662,11 +662,10 @@ fn header_cell(label: &str, col: SortCol, active: SortCol, asc: bool) -> Cell<'s
 fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
     let sc = app.sort_col;
 
-    let right_pad = "─".repeat(if area.width < 60 { 3 } else if area.width < 100 { 2 } else { 1 });
     let updated = if area.width >= 50 {
-        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S "), right_pad)
+        format!(" {} ", app.last_updated.with_timezone(&Local).format("%b %-d, %H:%M:%S"))
     } else {
-        format!(" {}{}─", app.last_updated.with_timezone(&Local).format("%H:%M:%S "), right_pad)
+        format!(" {} ", app.last_updated.with_timezone(&Local).format("%H:%M:%S"))
     };
 
     let block = Block::default()
@@ -765,8 +764,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
 
 fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<Utc>) {
     let total = hv.logs.len();
-    let right_pad = "─".repeat(if area.width < 60 { 3 } else if area.width < 100 { 2 } else { 1 });
-    let title_right = format!(" {} run{} {}", total, if total == 1 { "" } else { "s" }, right_pad);
+    let title_right = format!(" {} run{} ", total, if total == 1 { "" } else { "s" });
 
     let block = Block::default()
         .borders(Borders::ALL)
