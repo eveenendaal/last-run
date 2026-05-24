@@ -451,7 +451,7 @@ fn run_app(
 ) -> AppResult<()> {
     let tasks_raw = db::get_all_tasks(conn, id_filter)?;
     let mut app = App::new(tasks_raw, sort_col);
-    let refresh_interval = StdDuration::from_secs(1);
+    let refresh_interval = StdDuration::from_millis(250);
     let mut last_refresh = Instant::now();
 
     loop {
