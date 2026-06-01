@@ -12,9 +12,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        block::Title, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, TableState,
-    },
+    widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, TableState},
     Frame, Terminal,
 };
 use rusqlite::Connection;
@@ -672,13 +670,13 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::DarkGray))
-        .title(Title::from(Span::styled(
+        .title(Span::styled(
             " Last Run Status ",
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        )))
+        ))
         .title(
-            Title::from(Span::styled(updated, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
-                .alignment(Alignment::Right),
+            Line::from(Span::styled(updated, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                .right_aligned(),
         );
 
     let asc = app.sort_asc;
@@ -754,7 +752,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect, now: &DateTime<Utc>) {
     let table = Table::new(rows, widths)
         .header(header)
         .block(block)
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
     // 2 borders + 1 header row + 1 header margin
@@ -770,13 +768,13 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::DarkGray))
-        .title(Title::from(Span::styled(
+        .title(Span::styled(
             format!(" Task History: {} ", hv.task_id),
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        )))
+        ))
         .title(
-            Title::from(Span::styled(title_right, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
-                .alignment(Alignment::Right),
+            Line::from(Span::styled(title_right, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                .right_aligned(),
         );
 
     let inner = block.inner(area);
@@ -857,7 +855,7 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
 
     let table = Table::new(rows, widths)
         .header(header)
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
     // 2 borders (from outer block) + 2 stats lines + 1 header row
@@ -1012,11 +1010,11 @@ fn draw_help_modal(f: &mut Frame, in_history: bool) {
                     Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                 ))
                 .title(
-                    Title::from(Span::styled(
+                    Line::from(Span::styled(
                         " ? or Esc to close ",
                         Style::default().fg(Color::DarkGray),
                     ))
-                    .alignment(Alignment::Right),
+                    .right_aligned(),
                 ),
         ),
         popup_area,
