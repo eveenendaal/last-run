@@ -63,12 +63,19 @@ impl HistoryView {
 
     fn refresh(&mut self, conn: &Connection) -> AppResult<()> {
         let selected_raw = self.selected_raw_end_time().map(|s| s.to_string());
+        let prev_idx = self.table_state.selected();
         self.logs = db::get_task_log_entries(conn, &self.task_id)?;
         let new_idx = selected_raw.as_deref().and_then(|raw| {
             self.logs.iter().position(|(r, _, _)| r == raw)
         });
+        // If the previously-selected entry is gone (e.g. just deleted), keep the
+        // cursor at the same position instead of jumping back to the top.
         self.table_state.select(new_idx.or_else(|| {
-            if self.logs.is_empty() { None } else { Some(0) }
+            if self.logs.is_empty() {
+                None
+            } else {
+                Some(prev_idx.unwrap_or(0).min(self.logs.len() - 1))
+            }
         }));
         Ok(())
     }
@@ -188,9 +195,8 @@ impl App {
     }
 
     fn refresh(&mut self, conn: &Connection) -> AppResult<()> {
-        let selected_id = self
-            .table_state
-            .selected()
+        let prev_idx = self.table_state.selected();
+        let selected_id = prev_idx
             .and_then(|i| self.tasks.get(i))
             .map(|t| t.id.clone());
 
@@ -210,8 +216,14 @@ impl App {
         let new_idx = selected_id
             .as_ref()
             .and_then(|id| self.tasks.iter().position(|t| &t.id == id));
+        // If the previously-selected task is gone (e.g. just deleted), keep the
+        // cursor at the same position instead of jumping back to the top.
         self.table_state.select(new_idx.or_else(|| {
-            if self.tasks.is_empty() { None } else { Some(0) }
+            if self.tasks.is_empty() {
+                None
+            } else {
+                Some(prev_idx.unwrap_or(0).min(self.tasks.len() - 1))
+            }
         }));
 
         Ok(())
