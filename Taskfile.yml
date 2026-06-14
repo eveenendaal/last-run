@@ -29,3 +29,7 @@ tasks:
     desc: Run the LastRun status TUI
     cmds:
       - cargo run --release -- status
+  help:
+    desc: Run the LastRun help
+    cmds:
+      - cargo run --release -- help
