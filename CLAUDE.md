@@ -66,11 +66,11 @@ relies on a macOS runner.
 - **Required secret**: `HOMEBREW_GITHUB_TOKEN` — a classic PAT (`public_repo` +
   `workflow`) on an account that has forked `Homebrew/homebrew-core`. This must
   be added in the repo settings; it cannot be created from code.
-- **First submission is manual**: homebrew-core reviews the initial formula. Use
-  `packaging/homebrew/lastrun.rb` as the starting point (build-from-source,
-  `depends_on "rust" => :build`). Fill in the release tag URL and the source
-  tarball `sha256`, then open the PR by hand. The workflow automates every
-  bump after acceptance.
+- **First submission is manual**: homebrew-core reviews the initial formula.
+  Each release automatically generates `lastrun.rb` (with the correct URL and
+  `sha256`) and attaches it as a release asset. Download it from the latest
+  release, copy it into homebrew-core's `Formula/l/lastrun.rb`, and open a PR
+  by hand. The workflow automates every bump after acceptance.
 
 ## Conventions
 

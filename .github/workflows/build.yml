@@ -102,6 +102,18 @@ jobs:
             dist/lastrun-x86_64-apple-darwin.sha256
             VERSION
 
+      - name: Generate Homebrew Formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          URL="https://github.com/eveenendaal/last-run/archive/refs/tags/v${VERSION}.tar.gz"
+          SHA256=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
+          sed "s|url \".*\"|url \"${URL}\"|" packaging/homebrew/lastrun.rb \
+            | sed "s|sha256 \".*\"|sha256 \"${SHA256}\"|" \
+            > dist/lastrun.rb
+          gh release upload "v${VERSION}" dist/lastrun.rb
+
       - name: Remove old releases
         uses: actions/github-script@v9
         with:
