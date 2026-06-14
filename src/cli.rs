@@ -92,6 +92,9 @@ pub enum Commands {
         json: bool,
     },
 
+    /// Interactively view and edit settings (e.g. log retention)
+    Settings {},
+
     /// Reset the tasks database
     Reset {},
 
