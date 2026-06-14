@@ -12,11 +12,12 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Install Tools
+    - name: Install Task
       if: inputs.include-task == 'true'
-      uses: eveenendaal/github-actions/actions/install-my-tools@master
+      uses: arduino/setup-task@v2
       with:
-        include: task
+        repo-token: ${{ github.token }}
+        version: 3.x
 
     - name: Cache Cargo
       uses: actions/cache@v4
