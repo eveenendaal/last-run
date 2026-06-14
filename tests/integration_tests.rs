@@ -133,3 +133,69 @@ fn test_mutiple_task_management() {
     let final_tasks = get_all_tasks(&conn, None).unwrap();
     assert_eq!(final_tasks.len(), 0);
 }
+
+#[test]
+fn test_auto_archive_on_done() {
+    use lastrun::db::{delete_old_logs, get_task_logs, set_log_retention};
+    use chrono::Duration;
+
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // Set retention to a very short window (1 hour)
+    set_log_retention(&conn, "1h").unwrap();
+
+    // Create a task and record a completion from 2 hours ago
+    let mut task = make_task("auto_archive_test");
+    task.insert(&conn).unwrap();
+    task.start_time = Some(Utc::now() - Duration::hours(2));
+    task.last_run = Some(Utc::now() - Duration::hours(2));
+    task.update(&conn).unwrap();
+
+    // Verify the log entry exists
+    let logs = get_task_logs(&conn, Some("auto_archive_test".to_string()), 10).unwrap();
+    assert_eq!(logs.len(), 1);
+
+    // Simulate auto-archive: delete logs older than 1 hour
+    let cutoff = Utc::now() - Duration::hours(1);
+    let deleted = delete_old_logs(&conn, &cutoff, None).unwrap();
+    assert_eq!(deleted, 1);
+
+    // Verify the log entry is gone
+    let logs = get_task_logs(&conn, Some("auto_archive_test".to_string()), 10).unwrap();
+    assert_eq!(logs.len(), 0);
+}
+
+#[test]
+fn test_archive_preserves_recent_logs() {
+    use lastrun::db::{delete_old_logs, get_task_logs};
+    use chrono::Duration;
+
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // Create two log entries: one old, one recent
+    let mut task = make_task("preserve_test");
+    task.insert(&conn).unwrap();
+
+    // Old entry
+    task.start_time = Some(Utc::now() - Duration::hours(48));
+    task.last_run = Some(Utc::now() - Duration::hours(48));
+    task.update(&conn).unwrap();
+
+    // Recent entry
+    task.start_time = Some(Utc::now() - Duration::minutes(5));
+    task.last_run = Some(Utc::now() - Duration::minutes(5));
+    task.update(&conn).unwrap();
+
+    let logs = get_task_logs(&conn, Some("preserve_test".to_string()), 10).unwrap();
+    assert_eq!(logs.len(), 2);
+
+    // Archive older than 24h — should only delete the old one
+    let cutoff = Utc::now() - Duration::hours(24);
+    let deleted = delete_old_logs(&conn, &cutoff, None).unwrap();
+    assert_eq!(deleted, 1);
+
+    let logs = get_task_logs(&conn, Some("preserve_test".to_string()), 10).unwrap();
+    assert_eq!(logs.len(), 1);
+}

@@ -153,3 +153,65 @@ fn test_delete_command() {
     let non_existent_deleted = delete_task(&conn, "non_existent_task").unwrap();
     assert_eq!(non_existent_deleted, 0);
 }
+
+#[test]
+fn test_settings_crud() {
+    use lastrun::db::{get_all_settings, get_setting, set_setting};
+
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // Setting should not exist initially
+    let val = get_setting(&conn, "log_retention").unwrap();
+    assert!(val.is_none());
+
+    // Set a value
+    set_setting(&conn, "log_retention", "30d").unwrap();
+    let val = get_setting(&conn, "log_retention").unwrap();
+    assert_eq!(val, Some("30d".to_string()));
+
+    // Update the value
+    set_setting(&conn, "log_retention", "60d").unwrap();
+    let val = get_setting(&conn, "log_retention").unwrap();
+    assert_eq!(val, Some("60d".to_string()));
+
+    // Multiple settings
+    set_setting(&conn, "other_key", "some_value").unwrap();
+    let all = get_all_settings(&conn).unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(all.contains(&("log_retention".to_string(), "60d".to_string())));
+    assert!(all.contains(&("other_key".to_string(), "some_value".to_string())));
+}
+
+#[test]
+fn test_log_retention_seconds() {
+    use lastrun::db::{get_log_retention_seconds, set_log_retention};
+
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    // Unset returns None
+    let secs = get_log_retention_seconds(&conn).unwrap();
+    assert!(secs.is_none());
+
+    // Valid duration
+    set_log_retention(&conn, "30d").unwrap();
+    let secs = get_log_retention_seconds(&conn).unwrap();
+    assert_eq!(secs, Some(30 * 24 * 3600));
+
+    // "off" returns None
+    set_log_retention(&conn, "off").unwrap();
+    let secs = get_log_retention_seconds(&conn).unwrap();
+    assert!(secs.is_none());
+
+    // "0" returns None
+    set_log_retention(&conn, "0").unwrap();
+    let secs = get_log_retention_seconds(&conn).unwrap();
+    assert!(secs.is_none());
+
+    // Invalid duration returns None
+    use lastrun::db::set_setting;
+    set_setting(&conn, "log_retention", "not_a_duration").unwrap();
+    let secs = get_log_retention_seconds(&conn).unwrap();
+    assert!(secs.is_none());
+}

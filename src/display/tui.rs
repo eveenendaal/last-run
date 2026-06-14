@@ -39,6 +39,8 @@ enum AppState {
     Normal,
     ConfirmDelete(String),
     History,
+    Settings,
+    EditSetting(String, String), // (key, current input buffer)
 }
 
 // Holds state for the history panel (shown when AppState::History)
@@ -157,6 +159,7 @@ struct App {
     app_state: AppState,
     last_updated: DateTime<Utc>,
     history_view: Option<HistoryView>,
+    settings: Vec<(String, String)>,
     show_help: bool,
     page_size: usize,
 }
@@ -184,6 +187,7 @@ impl App {
             app_state: AppState::Normal,
             last_updated: Utc::now(),
             history_view: None,
+            settings: Vec::new(),
             show_help: false,
             page_size: 10,
         };
@@ -341,6 +345,10 @@ impl App {
         }
         Ok(())
     }
+
+    fn reload_settings(&mut self, conn: &Connection) {
+        self.settings = db::get_all_settings(conn).unwrap_or_default();
+    }
 }
 
 fn task_status_order(task: &TaskRow, now: &DateTime<Utc>) -> u8 {
@@ -461,6 +469,7 @@ fn run_app(
 ) -> AppResult<()> {
     let tasks_raw = db::get_all_tasks(conn, id_filter)?;
     let mut app = App::new(tasks_raw, sort_col);
+    app.settings = db::get_all_settings(conn).unwrap_or_default();
     let refresh_interval = StdDuration::from_millis(250);
     let mut last_refresh = Instant::now();
 
@@ -557,6 +566,10 @@ fn run_app(
                         KeyCode::Right | KeyCode::Tab => app.cycle_sort_next(),
                         KeyCode::Left | KeyCode::BackTab => app.cycle_sort_prev(),
                         KeyCode::Char('s') => app.toggle_sort_order(),
+                        KeyCode::Char('S') => {
+                            app.reload_settings(conn);
+                            app.app_state = AppState::Settings;
+                        }
                         KeyCode::Char('r') => {
                             app.refresh(conn)?;
                             last_refresh = Instant::now();
@@ -571,6 +584,47 @@ fn run_app(
                         }
                         KeyCode::Char('?') => {
                             app.show_help = true;
+                        }
+                        _ => {}
+                    }
+                } else if matches!(app.app_state, AppState::Settings) {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            app.app_state = AppState::Normal;
+                        }
+                        KeyCode::Enter => {
+                            if let Some((key, value)) = app.settings.first() {
+                                app.app_state = AppState::EditSetting(key.clone(), value.clone());
+                            }
+                        }
+                        KeyCode::Char('?') => {
+                            app.show_help = true;
+                        }
+                        _ => {}
+                    }
+                } else if matches!(app.app_state, AppState::EditSetting(_, _)) {
+                    // EditSetting state
+                    let (setting_key, mut buf) = match &app.app_state {
+                        AppState::EditSetting(k, v) => (k.clone(), v.clone()),
+                        _ => unreachable!(),
+                    };
+                    match key.code {
+                        KeyCode::Enter => {
+                            if db::set_setting(conn, &setting_key, &buf).is_ok() {
+                                app.reload_settings(conn);
+                            }
+                            app.app_state = AppState::Settings;
+                        }
+                        KeyCode::Esc => {
+                            app.app_state = AppState::Settings;
+                        }
+                        KeyCode::Backspace => {
+                            buf.pop();
+                            app.app_state = AppState::EditSetting(setting_key, buf);
+                        }
+                        KeyCode::Char(c) => {
+                            buf.push(c);
+                            app.app_state = AppState::EditSetting(setting_key, buf);
                         }
                         _ => {}
                     }
@@ -608,6 +662,7 @@ fn run_app(
                         hv.refresh(conn)?;
                     }
                 }
+                AppState::Settings | AppState::EditSetting(_, _) => {}
             }
             last_refresh = Instant::now();
         }
@@ -616,41 +671,53 @@ fn run_app(
 
 fn draw(f: &mut Frame, app: &mut App) {
     let now = Utc::now();
-    let in_history = matches!(app.app_state, AppState::History);
-    let ctrl_h = controls_height(f.area().width, in_history);
+    let mode = shortcut_mode(&app.app_state);
+    let ctrl_h = controls_height(f.area().width, mode);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(ctrl_h)])
+        .constraints([Constraint::Min(0), Constraint::Length(1), Constraint::Length(ctrl_h)])
         .split(f.area());
 
     match app.app_state {
         AppState::Normal => {
             draw_table(f, app, chunks[0], &now);
-            draw_controls(f, chunks[1], false);
+            draw_settings_summary(f, app, chunks[1]);
+            draw_controls(f, chunks[2], ShortcutMode::Normal);
         }
         AppState::ConfirmDelete(ref id) => {
             let id = id.clone();
             draw_table(f, app, chunks[0], &now);
-            draw_controls(f, chunks[1], false);
+            draw_settings_summary(f, app, chunks[1]);
+            draw_controls(f, chunks[2], ShortcutMode::Normal);
             draw_confirm_task_popup(f, &id);
         }
         AppState::History => {
             if let Some(ref mut hv) = app.history_view {
                 draw_history(f, hv, chunks[0], &now);
             }
-            draw_controls(f, chunks[1], true);
-            // Confirm-delete-log popup (rendered on top)
+            draw_settings_summary(f, app, chunks[1]);
+            draw_controls(f, chunks[2], ShortcutMode::History);
             if let Some(ref hv) = app.history_view {
                 if let Some(ref raw) = hv.confirm_delete {
                     draw_confirm_log_popup(f, &hv.task_id, raw, &now);
                 }
             }
         }
+        AppState::Settings => {
+            draw_settings_table(f, app, chunks[0]);
+            draw_settings_summary(f, app, chunks[1]);
+            draw_controls(f, chunks[2], ShortcutMode::Settings);
+        }
+        AppState::EditSetting(ref key, ref value) => {
+            draw_settings_table(f, app, chunks[0]);
+            draw_settings_summary(f, app, chunks[1]);
+            draw_controls(f, chunks[2], ShortcutMode::EditSetting);
+            draw_edit_setting_popup(f, key, value);
+        }
     }
 
     if app.show_help {
-        let in_history = matches!(app.app_state, AppState::History);
-        draw_help_modal(f, in_history);
+        draw_help_modal(f, shortcut_mode(&app.app_state));
     }
 }
 
@@ -875,46 +942,74 @@ fn draw_history(f: &mut Frame, hv: &mut HistoryView, area: Rect, now: &DateTime<
     f.render_stateful_widget(table, chunks[1], &mut hv.table_state);
 }
 
-fn get_basic_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
-    if in_history {
-        &[("↑↓/jk", "Navigate"), ("?", "All Keys"), ("q/Esc", "Back")]
-    } else {
-        &[
+fn shortcut_mode(app_state: &AppState) -> ShortcutMode {
+    match app_state {
+        AppState::Normal | AppState::ConfirmDelete(_) => ShortcutMode::Normal,
+        AppState::History => ShortcutMode::History,
+        AppState::Settings => ShortcutMode::Settings,
+        AppState::EditSetting(_, _) => ShortcutMode::EditSetting,
+    }
+}
+
+#[derive(PartialEq)]
+enum ShortcutMode {
+    Normal,
+    History,
+    Settings,
+    EditSetting,
+}
+
+fn get_basic_shortcuts(mode: ShortcutMode) -> &'static [(&'static str, &'static str)] {
+    match mode {
+        ShortcutMode::Settings => &[("Enter", "Edit"), ("?", "All Keys"), ("q/Esc", "Back")],
+        ShortcutMode::EditSetting => &[("Enter", "Save"), ("Esc", "Cancel")],
+        ShortcutMode::History => &[("↑↓/jk", "Navigate"), ("?", "All Keys"), ("q/Esc", "Back")],
+        ShortcutMode::Normal => &[
             ("↑↓/jk", "Navigate"),
             ("Enter/h", "History"),
             ("?", "All Keys"),
             ("q/Esc", "Quit"),
-        ]
+        ],
     }
 }
 
-fn get_all_shortcuts(in_history: bool) -> &'static [(&'static str, &'static str)] {
-    if in_history {
-        &[
+fn get_all_shortcuts(mode: ShortcutMode) -> &'static [(&'static str, &'static str)] {
+    match mode {
+        ShortcutMode::Settings => &[
+            ("Enter", "Edit Setting"),
+            ("?", "Help"),
+            ("q/Esc", "Back"),
+        ],
+        ShortcutMode::EditSetting => &[
+            ("Enter", "Save"),
+            ("Esc", "Cancel"),
+            ("Backspace", "Delete"),
+        ],
+        ShortcutMode::History => &[
             ("↑↓/jk", "Navigate"),
             ("PgUp/PgDn", "Page"),
             ("d", "Delete Entry"),
             ("r", "Refresh"),
             ("?", "Help"),
             ("q/Esc", "Back"),
-        ]
-    } else {
-        &[
+        ],
+        ShortcutMode::Normal => &[
             ("↑↓/jk", "Navigate"),
             ("PgUp/PgDn", "Page"),
             ("←→/Tab", "Sort"),
             ("s", "Toggle Order"),
+            ("S", "Settings"),
             ("Enter/h", "History"),
             ("d", "Delete Task"),
             ("r", "Refresh"),
             ("?", "Help"),
             ("q/Esc", "Quit"),
-        ]
+        ],
     }
 }
 
-fn controls_height(terminal_width: u16, in_history: bool) -> u16 {
-    let shortcuts = get_basic_shortcuts(in_history);
+fn controls_height(terminal_width: u16, mode: ShortcutMode) -> u16 {
+    let shortcuts = get_basic_shortcuts(mode);
     let content_width = terminal_width.saturating_sub(2) as usize;
     let mut lines = 1u16;
     let mut current_width = 2usize; // leading spaces
@@ -936,13 +1031,13 @@ fn controls_height(terminal_width: u16, in_history: bool) -> u16 {
     lines + 2 // +2 for borders
 }
 
-fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
+fn draw_controls(f: &mut Frame, area: Rect, mode: ShortcutMode) {
     let key_style =
         Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::Gray);
     let sep_style = Style::default().fg(Color::DarkGray);
 
-    let shortcuts = get_basic_shortcuts(in_history);
+    let shortcuts = get_basic_shortcuts(mode);
     let content_width = area.width.saturating_sub(2) as usize;
 
     let mut lines: Vec<Line> = vec![];
@@ -982,8 +1077,107 @@ fn draw_controls(f: &mut Frame, area: Rect, in_history: bool) {
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn draw_help_modal(f: &mut Frame, in_history: bool) {
-    let shortcuts = get_all_shortcuts(in_history);
+fn retention_display(settings: &[(String, String)]) -> String {
+    settings
+        .iter()
+        .find(|(k, _)| k == "log_retention")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| "30d (default)".to_string())
+}
+
+fn draw_settings_summary(f: &mut Frame, app: &App, area: Rect) {
+    let retention = retention_display(&app.settings);
+    let line = Line::from(vec![
+        Span::styled(" Retention: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(retention, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled("S", Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(" Settings ", Style::default().fg(Color::Gray)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
+}
+
+fn draw_settings_table(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title(Span::styled(
+            " Settings ",
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        ));
+
+    let header = Row::new(vec![
+        Cell::from("Key").style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Cell::from("Value").style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+    ])
+    .height(1)
+    .bottom_margin(1);
+
+    let rows: Vec<Row> = if app.settings.is_empty() {
+        vec![Row::new(vec![
+            Cell::from("No settings configured.").style(Style::default().fg(Color::DarkGray)),
+        ])]
+    } else {
+        app.settings
+            .iter()
+            .map(|(key, value)| {
+                Row::new(vec![
+                    Cell::from(key.clone()).style(Style::default().fg(Color::White)),
+                    Cell::from(value.clone()).style(Style::default().fg(Color::Yellow)),
+                ])
+            })
+            .collect()
+    };
+
+    let widths = [
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(block);
+
+    f.render_widget(table, area);
+}
+
+fn draw_edit_setting_popup(f: &mut Frame, key: &str, value: &str) {
+    let area = f.area();
+    let content = format!(" Edit {}: {}█ ", key, value);
+    let popup_width = (content.len() as u16 + 4).min(area.width.saturating_sub(4)).max(40);
+    let popup_height = 3u16;
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(
+        Paragraph::new(content)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Color::Yellow))
+                    .title(Span::styled(
+                        format!(" Edit Setting — {} ", key),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ))
+                    .title(
+                        Line::from(Span::styled(
+                            " Enter to save  Esc to cancel ",
+                            Style::default().fg(Color::DarkGray),
+                        ))
+                        .right_aligned(),
+                    ),
+            )
+            .alignment(Alignment::Left),
+        popup_area,
+    );
+}
+
+fn draw_help_modal(f: &mut Frame, mode: ShortcutMode) {
+    let shortcuts = get_all_shortcuts(mode);
     let key_style =
         Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::Gray);

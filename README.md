@@ -32,6 +32,7 @@ variable. See `lastrun --help` for details.
 - Interactive `status` TUI with sortable columns, per-task history, and
   duration stats
 - `--json` snapshot for scripts and dashboards
+- Configurable log retention with automatic cleanup on every `done`/`update`
 - Log archival with confirmation prompt
 - Zsh tab completion
 - `--quiet` flag for non-interactive use
@@ -130,6 +131,7 @@ Keybindings inside the TUI:
 | `<` / `>`      | Cycle sort column                            |
 | `s`            | Toggle ascending / descending sort           |
 | `Enter`        | Drill into per-task history                  |
+| `S`            | Open settings (edit retention, etc.)         |
 | `d`            | Delete the selected task (asks to confirm)   |
 | `?`            | Toggle the help overlay                      |
 | `q`            | Quit                                         |
@@ -173,14 +175,30 @@ lastrun delete --id backup
 
 ### `archive`
 
-Delete log entries older than a threshold. By default it asks for
-confirmation; pass `--yes` to skip the prompt.
+Delete log entries older than a threshold. Defaults to the stored retention
+setting (or 30d if none is set). Pass `--older-than` to override.
 
 ```bash
-lastrun archive --older-than 30d           # asks before deleting
-lastrun archive --older-than 30d --yes     # no prompt
-lastrun archive --older-than 7d --id backup  # only for one task
+lastrun archive                          # uses stored retention (default 30d)
+lastrun archive --older-than 7d          # override to 7 days
+lastrun archive --older-than 30d --yes   # skip confirmation
+lastrun archive --id backup              # only for one task
 ```
+
+### `set-retention`
+
+Set the log retention period for automatic cleanup. After this is set,
+every `done`/`update` call will automatically delete log entries older
+than the threshold. Pass `off` (or `0`) to disable auto-cleanup.
+
+```bash
+lastrun set-retention 60d                # keep 60 days of logs
+lastrun set-retention 2w                 # keep 2 weeks
+lastrun set-retention off                # disable auto-cleanup
+```
+
+The retention setting can also be changed from the TUI — press `S` in the
+status view and edit the `log_retention` value.
 
 ### `reset`
 

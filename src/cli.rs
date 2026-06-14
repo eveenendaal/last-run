@@ -109,11 +109,11 @@ pub enum Commands {
         id: String,
     },
 
-    /// Delete log entries older than a specified period
+    /// Delete log entries older than a specified period (defaults to the stored retention setting, or 30d)
     Archive {
         /// How far back to keep logs (e.g. 30d, 2w, 3m, 24h). Entries older than this are deleted.
         #[arg(short, long)]
-        older_than: String,
+        older_than: Option<String>,
 
         /// Limit archiving to a specific task ID (default: all tasks)
         #[arg(short, long)]
@@ -122,6 +122,12 @@ pub enum Commands {
         /// Skip the confirmation prompt and delete immediately
         #[arg(short, long)]
         yes: bool,
+    },
+
+    /// Set the log retention period for automatic cleanup (e.g. 30d, 2w, 3m, 24h). Pass "off" to disable.
+    SetRetention {
+        /// Retention duration (e.g. 30d, 2w, 3m, 24h) or "off"/"0" to disable auto-cleanup
+        duration: String,
     },
 
     /// Generate shell completion for your shell

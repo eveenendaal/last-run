@@ -82,7 +82,7 @@ constants used by `main.rs`'s plain printf-style output.
 
 ## Storage
 
-Two tables, both created in `db::init_db()`:
+Three tables, all created in `db::init_db()`:
 
 ```sql
 CREATE TABLE tasks (
@@ -98,7 +98,16 @@ CREATE TABLE task_log (
     elapsed_time INTEGER, -- Milliseconds between start and done
     PRIMARY KEY (id, end_time)
 );
+
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 ```
+
+The `settings` table is a generic key-value store. The only key currently
+in use is `log_retention`, which holds a duration string (e.g. `30d`, `2w`)
+or `off` to disable automatic log cleanup.
 
 Schema migrations are intentionally minimal: `init_db()` always runs the
 `CREATE TABLE IF NOT EXISTS` statements, then attempts an `ALTER TABLE
@@ -111,7 +120,10 @@ small and changes are additive.
 1. `main.rs` parses CLI args, opens the DB, runs `init_db()`.
 2. The matched subcommand calls into `model.rs` (typed task ops) or
    directly into `db.rs` (bulk reads, archival, deletions).
-3. The result is handed to whichever renderer the command needs:
+3. After every `done`/`update`, `auto_archive()` reads the `log_retention`
+   setting and deletes log entries older than the threshold (defaulting to
+   30 days if not configured).
+4. The result is handed to whichever renderer the command needs:
    - Plain `println!` for `start`/`done`/`check`/`clear`/`delete`/`reset`.
    - `display::print_task_logs` for `logs`.
    - `display::print_task_status_json` for `status --json`.

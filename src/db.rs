@@ -1,5 +1,5 @@
 use crate::error::{AppError, AppResult};
-use crate::format::parse_rfc3339_opt;
+use crate::format::{parse_duration, parse_rfc3339_opt};
 use chrono::{DateTime, Utc};
 use dirs::{data_dir, home_dir};
 use rusqlite::Connection;
@@ -23,6 +23,14 @@ pub fn init_db(conn: &Connection) -> AppResult<()> {
             end_time TEXT,
             elapsed_time INTEGER,
             PRIMARY KEY (id, end_time)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )",
         [],
     )?;
@@ -315,4 +323,64 @@ pub fn update_task_duration(conn: &Connection, id: &str, duration: i64) -> AppRe
         rusqlite::params![duration, id], // Use `rusqlite::params!` to handle mixed types
     )?;
     Ok(())
+}
+
+/// Get a setting value by key
+pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?")?;
+    let mut rows = stmt.query_map([key], |row| row.get::<_, String>(0))?;
+    match rows.next() {
+        Some(Ok(value)) => Ok(Some(value)),
+        _ => Ok(None),
+    }
+}
+
+/// Set a setting value (insert or update)
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![key, value],
+    )?;
+    Ok(())
+}
+
+/// Get all settings as key-value pairs
+pub fn get_all_settings(conn: &Connection) -> AppResult<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT key, value FROM settings ORDER BY key")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut settings = Vec::new();
+    for row in rows {
+        settings.push(row?);
+    }
+    Ok(settings)
+}
+
+/// Read the log_retention setting and return it in seconds.
+/// Returns None if the setting is unset, "off", "0", or an invalid duration string.
+pub fn get_log_retention_seconds(conn: &Connection) -> AppResult<Option<i64>> {
+    let value = match get_setting(conn, "log_retention")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    if value.eq_ignore_ascii_case("off") || value == "0" {
+        return Ok(None);
+    }
+    match parse_duration(&value) {
+        Ok(d) => Ok(Some(d.num_seconds())),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Parse and store the log_retention setting. Accepts a duration string like "30d" or "off" to disable.
+pub fn set_log_retention(conn: &Connection, value: &str) -> AppResult<()> {
+    if value.eq_ignore_ascii_case("off") || value == "0" {
+        set_setting(conn, "log_retention", "off")
+    } else {
+        // Validate by parsing
+        parse_duration(value).map_err(|_| AppError::DurationParse("Invalid duration, use e.g. 30d, 2w, 3m, 24h".to_string()))?;
+        set_setting(conn, "log_retention", value)
+    }
 }

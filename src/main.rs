@@ -13,6 +13,7 @@ use display::{print_task_logs, print_task_status_json, run_tui, SortCol, BOLD, G
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
+use rusqlite::Connection;
 use std::io::{self, Write};
 use std::process;
 
@@ -22,6 +23,26 @@ fn require_id(id: &str) -> AppResult<()> {
     } else {
         Ok(())
     }
+}
+
+fn auto_archive(conn: &Connection, quiet: bool) -> AppResult<()> {
+    let retention = db::get_log_retention_seconds(conn)?
+        .unwrap_or(30 * 24 * 3600); // default 30 days
+    if retention <= 0 {
+        return Ok(());
+    }
+    let cutoff = Utc::now() - chrono::Duration::seconds(retention);
+    let deleted = db::delete_old_logs(conn, &cutoff, None)?;
+    if !quiet && deleted > 0 {
+        println!(
+            "{}Auto-cleaned {} old log {}.{}",
+            GREEN,
+            deleted,
+            if deleted == 1 { "entry" } else { "entries" },
+            RESET,
+        );
+    }
+    Ok(())
 }
 
 fn main() -> AppResult<()> {
@@ -64,6 +85,8 @@ fn main() -> AppResult<()> {
                     RESET
                 );
             }
+
+            auto_archive(&conn, cli.quiet)?;
         }
 
         Commands::Start { id } => {
@@ -215,6 +238,12 @@ fn main() -> AppResult<()> {
             }
         }
         Commands::Archive { older_than, id, yes } => {
+            let older_than = older_than.unwrap_or_else(|| {
+                db::get_setting(&conn, "log_retention")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| "30d".to_string())
+            });
             let duration = parse_duration(&older_than).map_err(AppError::DurationParse)?;
             let cutoff = Utc::now() - duration;
             let task_id_ref = id.as_deref();
@@ -277,6 +306,28 @@ fn main() -> AppResult<()> {
                 }
             } else if !cli.quiet {
                 println!("{}Cancelled.{}", RED, RESET);
+            }
+        }
+
+        Commands::SetRetention { duration } => {
+            let normalized = duration.trim();
+            if normalized.eq_ignore_ascii_case("off") || normalized == "0" {
+                db::set_log_retention(&conn, "off")?;
+                if !cli.quiet {
+                    println!(
+                        "{}{}Log retention disabled — auto-cleanup turned off.{}",
+                        BOLD, GREEN, RESET
+                    );
+                }
+            } else {
+                parse_duration(normalized).map_err(AppError::DurationParse)?;
+                db::set_log_retention(&conn, normalized)?;
+                if !cli.quiet {
+                    println!(
+                        "{}{}Log retention set to {}{}{}. Old logs will be auto-cleaned on each `done`/`update`.{}",
+                        BOLD, GREEN, WHITE, normalized, GREEN, RESET
+                    );
+                }
             }
         }
 
