@@ -32,26 +32,25 @@ sync if you build locally with `--locked`.
 Releases are produced by `.github/workflows/build.yml` on push to `master`:
 
 1. `test` job (Ubuntu) runs `task test`.
-2. `build` job (macOS, Apple Silicon) computes the next patch version from the
-   latest git tag, sed-bumps `Cargo.toml` *locally in the runner*, refreshes
-   `Cargo.lock`, then builds **both macOS targets** — `aarch64-apple-darwin`
-   and `x86_64-apple-darwin` — using `task build TARGET=...`. (Apple Silicon
-   runners cross-compile the x86_64 target.) No commit is pushed back to
-   `master`.
-3. The compiled binary's `--version` output comes from `build.rs`, which
-   reads the `RELEASE_VERSION` env var (set by the workflow from the next
-   tag) and bakes it into the binary via `env!("APP_VERSION")`. So the
-   tag is the source of truth for the released binary's version; the
-   in-runner `Cargo.toml` bump is just to satisfy `--locked`.
-4. `softprops/action-gh-release` creates the release tag (`v*`) and uploads
-   the binaries. A `VERSION` file is also written in the runner and
-   uploaded as a release asset.
+2. `version` job (Ubuntu) computes the next patch version from the latest
+   git tag, sed-bumps `Cargo.toml` *locally in the runner*, refreshes
+   `Cargo.lock`, and uploads the patched manifests as an artifact.
+3. `build` job matrix builds on native runners for each target OS:
+   - **macOS** (Apple Silicon): `aarch64-apple-darwin` + cross-compiled
+     `x86_64-apple-darwin`
+   - **Linux**: `x86_64-unknown-linux-gnu`
+   - **Windows**: `x86_64-pc-windows-msvc`
+   
+   Each runner downloads the patched manifests, builds with `--locked`, and
+   uploads its binaries as an artifact. The version from `build.rs` is fed in
+   via the `RELEASE_VERSION` env var.
+4. `create-release` job (Ubuntu) downloads all artifacts, writes a `VERSION`
+   file, and calls `softprops/action-gh-release` to create the release tag
+   (`v*`) and upload all binaries.
 5. Only the 3 most recent releases are kept.
 
-To add more targets (e.g. Linux), extend the `TARGETS` env in the `build` job and
-the `files:` list in the Create Release step. Linux/Windows targets need their own
-runners or a cross-compilation setup (e.g. `cross`), since the matrix currently
-relies on a macOS runner.
+To add more targets, add an entry to the build matrix and include its artifact
+directory in the `create-release` job's `files:` list.
 
 ## Conventions
 

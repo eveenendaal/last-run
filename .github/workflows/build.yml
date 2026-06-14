@@ -45,25 +45,19 @@ jobs:
       - name: Test App
         run: task test
 
-  build:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
-    runs-on: macos-latest
-    environment: default
+  version:
     needs: test
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
-
-    # macos-latest runners are Apple Silicon, which can also cross-compile to
-    # x86_64-apple-darwin, so both macOS architectures are built from one job.
-    env:
-      TARGETS: "aarch64-apple-darwin x86_64-apple-darwin"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Compute next version
         id: version
@@ -77,42 +71,103 @@ jobs:
           next="${major}.${minor}.$((patch + 1))"
           echo "version=$next" >> "$GITHUB_OUTPUT"
           cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          sed -i '' "s/^version = \"$cargo_version\"/version = \"$next\"/" Cargo.toml
+          sed -i "s/^version = \"$cargo_version\"/version = \"$next\"/" Cargo.toml
           echo "Bumped Cargo.toml $cargo_version -> $next (tag-based: $current -> $next)"
-
-      - name: Update Cargo.lock
-        run: cargo update --workspace
 
       - name: Setup Rust Environment
         uses: ./.github/actions/setup-rust
         with:
-          cache-key-prefix: 'release-'
+          cache-key-prefix: 'version-'
 
-      - name: Build App
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
+      - name: Upload patched manifests
+        uses: actions/upload-artifact@v5
+        with:
+          name: patched-manifests
+          path: |
+            Cargo.toml
+            Cargo.lock
+
+  build:
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            targets: "aarch64-apple-darwin x86_64-apple-darwin"
+            artifact-name: macos-binaries
+          - os: ubuntu-latest
+            targets: "x86_64-unknown-linux-gnu"
+            artifact-name: linux-binaries
+          - os: windows-latest
+            targets: "x86_64-pc-windows-msvc"
+            artifact-name: windows-binaries
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      TARGETS: ${{ matrix.targets }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download patched manifests
+        uses: actions/download-artifact@v6
+        with:
+          name: patched-manifests
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key-prefix: 'release-${{ matrix.os }}-'
+
+      - name: Build
         run: |
           mkdir -p dist
           for target in $TARGETS; do
-            task build TARGET="$target"
-            cp "target/$target/release/lastrun" "dist/lastrun-$target"
-            (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
+            rustup target add "$target"
+            cargo build --release --locked --target "$target"
+            bin="lastrun"
+            case "$target" in
+              *windows*) bin="lastrun.exe" ;;
+            esac
+            cp "target/$target/release/$bin" "dist/$bin-$target"
+            (cd dist && shasum -a 256 "$bin-$target" > "$bin-$target.sha256")
           done
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: dist/
+
+  create-release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+
       - name: Write VERSION file
-        run: echo "${{ steps.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
 
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v3
         with:
-          name: Release v${{ steps.version.outputs.version }}
-          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ needs.version.outputs.version }}
+          tag_name: v${{ needs.version.outputs.version }}
           files: |
-            dist/lastrun-aarch64-apple-darwin
-            dist/lastrun-aarch64-apple-darwin.sha256
-            dist/lastrun-x86_64-apple-darwin
-            dist/lastrun-x86_64-apple-darwin.sha256
+            macos-binaries/*
+            linux-binaries/*
+            windows-binaries/*
             VERSION
 
       - name: Remove old releases
@@ -131,4 +186,3 @@ jobs:
                 release_id: release.id,
               });
             }
-
