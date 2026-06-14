@@ -1,0 +1,135 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'Taskfile.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - '.github/workflows/*.yml'
+      - '.github/actions/**/*.yml'
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-builder
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    environment: default
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key-prefix: 'test-'
+
+      - name: Test App
+        run: task test
+
+  build:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: macos-latest
+    environment: default
+    needs: test
+    defaults:
+      run:
+        shell: bash
+
+    # macos-latest runners are Apple Silicon, which can also cross-compile to
+    # x86_64-apple-darwin, so both macOS architectures are built from one job.
+    env:
+      TARGETS: "aarch64-apple-darwin x86_64-apple-darwin"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Rust Version Upgrade
+        id: version
+        uses: eveenendaal/github-actions/actions/rust-version-upgrade@master
+        with:
+          tag-prefix: 'v'
+          bump: 'patch'
+
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key-prefix: 'release-'
+
+      - name: Build App
+        run: |
+          mkdir -p dist
+          for target in $TARGETS; do
+            task build TARGET="$target"
+            cp "target/$target/release/lastrun" "dist/lastrun-$target"
+            (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
+          done
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Release v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          files: |
+            dist/lastrun-aarch64-apple-darwin
+            dist/lastrun-aarch64-apple-darwin.sha256
+            dist/lastrun-x86_64-apple-darwin
+            dist/lastrun-x86_64-apple-darwin.sha256
+            VERSION
+
+      - name: Remove old releases
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const toDelete = releases.data.slice(3);
+            for (const release of toDelete) {
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+              });
+            }
+
+      # Releases created with the default GITHUB_TOKEN do not trigger the
+      # `release: published` event, so dispatch the Homebrew workflow with a PAT.
+      - name: Trigger Homebrew publish
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'homebrew.yml',
+              ref: 'master',
+              inputs: { tag: 'v${{ steps.version.outputs.version }}' }
+            })

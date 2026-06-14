@@ -1,0 +1,276 @@
+use crate::error::{AppError, AppResult};
+use crate::format::parse_rfc3339_opt;
+use chrono::{DateTime, Utc};
+use dirs::home_dir;
+use rusqlite::Connection;
+use std::fs;
+
+pub fn init_db(conn: &Connection) -> AppResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            last_run TEXT,
+            start_time TEXT,
+            duration INTEGER
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS task_log (
+            id TEXT,
+            end_time TEXT,
+            elapsed_time INTEGER,
+            PRIMARY KEY (id, end_time)
+        )",
+        [],
+    )?;
+
+    // Ensure the `duration` column exists in the `tasks` table
+    conn.execute("ALTER TABLE tasks ADD COLUMN duration INTEGER", [])
+        .ok();
+
+    Ok(())
+}
+
+pub fn get_file_based_connection() -> AppResult<Connection> {
+    let home = home_dir().ok_or(AppError::HomeDirectoryNotFound)?;
+    let db_dir = home.join(".tasks");
+
+    fs::create_dir_all(&db_dir)?;
+
+    let db_path = db_dir.join("data.db");
+    let conn = Connection::open(db_path)?;
+
+    Ok(conn)
+}
+
+/// Get all task logs from the database
+pub fn get_task_logs(
+    conn: &Connection,
+    task_id: Option<String>,
+    limit: usize,
+) -> AppResult<Vec<(String, DateTime<Utc>, i64)>> {
+    let mut query = String::from("SELECT id, end_time, elapsed_time FROM task_log");
+
+    if let Some(_) = &task_id {
+        query.push_str(" WHERE id = ?"); // Added filtering by task ID
+    }
+
+    query.push_str(" ORDER BY end_time DESC");
+
+    if limit > 0 {
+        query.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    let mut stmt = conn.prepare(&query)?;
+
+    // Create a mapping function for the rows to handle parsing correctly
+    let map_log_row = |row: &rusqlite::Row| -> rusqlite::Result<(String, DateTime<Utc>, i64)> {
+        let id: String = row.get(0)?;
+        let end_time_str: String = row.get(1)?;
+        let elapsed_time: i64 = row.get(2)?;
+
+        // Handle DateTime parsing outside the ? operator to avoid type conversion issues
+        let end_time = match DateTime::parse_from_rfc3339(&end_time_str) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(err) => {
+                return Err(rusqlite::Error::InvalidParameterName(format!(
+                    "Date parse error: {}",
+                    err
+                )))
+            }
+        };
+
+        Ok((id, end_time, elapsed_time))
+    };
+
+    let mut logs = Vec::new();
+
+    // Use the mapping function with params
+    if let Some(id) = task_id {
+        let rows = stmt.query_map([id], map_log_row)?; // Pass task ID as parameter
+        for row in rows {
+            logs.push(row?);
+        }
+    } else {
+        let rows = stmt.query_map([], map_log_row)?; // No filtering
+        for row in rows {
+            logs.push(row?);
+        }
+    }
+
+    Ok(logs)
+}
+
+/// Get all tasks with their current status
+pub fn get_all_tasks(
+    conn: &Connection,
+    task_id: Option<String>,
+) -> AppResult<
+    Vec<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )>,
+> {
+    let mut query = String::from("SELECT id, last_run, start_time, duration FROM tasks");
+
+    if let Some(_) = &task_id {
+        query.push_str(" WHERE id = ?");
+    }
+
+    query.push_str(" ORDER BY id");
+
+    let mut stmt = conn.prepare(&query)?;
+
+    // Create a mapping function for the rows to handle parsing correctly
+    let map_task_row = |row: &rusqlite::Row| -> rusqlite::Result<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+    )> {
+        let id: String = row.get(0)?;
+        let last_run: Option<String> = row.get(1)?;
+        let start_time: Option<String> = row.get(2)?;
+        let duration: Option<i64> = row.get(3)?;
+
+        let last_run = parse_rfc3339_opt(last_run);
+        let start_time = parse_rfc3339_opt(start_time);
+
+        Ok((id, last_run, start_time, duration))
+    };
+
+    let mut tasks = Vec::new();
+
+    // Use the mapping function with params
+    if let Some(id) = task_id {
+        let rows = stmt.query_map([id], map_task_row)?;
+        for row in rows {
+            tasks.push(row?);
+        }
+    } else {
+        let rows = stmt.query_map([], map_task_row)?;
+        for row in rows {
+            tasks.push(row?);
+        }
+    }
+
+    Ok(tasks)
+}
+
+pub fn clean_db(conn: &Connection) -> AppResult<()> {
+    conn.execute("DROP TABLE IF EXISTS tasks", [])?;
+    conn.execute(
+        "CREATE TABLE tasks (
+            id TEXT PRIMARY KEY,
+            last_run TEXT,
+            start_time TEXT,
+            duration INTEGER
+        )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Delete task logs for a specific task
+pub fn delete_task_logs(conn: &Connection, task_id: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute("DELETE FROM task_log WHERE id = ?", [task_id])?;
+
+    Ok(rows_affected)
+}
+
+/// Get log entries for a single task, returning the raw end_time string alongside parsed values.
+/// Returns Vec<(raw_end_time, end_time, elapsed_ms)> ordered newest first.
+pub fn get_task_log_entries(
+    conn: &Connection,
+    task_id: &str,
+) -> AppResult<Vec<(String, DateTime<Utc>, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT end_time, elapsed_time FROM task_log WHERE id = ? ORDER BY end_time DESC",
+    )?;
+
+    let raw_rows: Vec<(String, i64)> = stmt
+        .query_map([task_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    raw_rows
+        .into_iter()
+        .map(|(end_time_str, elapsed_time)| {
+            let end_time = DateTime::parse_from_rfc3339(&end_time_str)
+                .map_err(crate::error::AppError::DateParse)?
+                .with_timezone(&Utc);
+            Ok((end_time_str, end_time, elapsed_time))
+        })
+        .collect()
+}
+
+/// Delete a single log entry for a task by its end_time key
+pub fn delete_task_log_entry(conn: &Connection, task_id: &str, end_time_str: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute(
+        "DELETE FROM task_log WHERE id = ? AND end_time = ?",
+        rusqlite::params![task_id, end_time_str],
+    )?;
+    Ok(rows_affected)
+}
+
+/// Delete a task record
+pub fn delete_task(conn: &Connection, task_id: &str) -> AppResult<usize> {
+    let rows_affected = conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])?;
+
+    Ok(rows_affected)
+}
+
+/// Count log entries older than the given cutoff timestamp, optionally filtered by task ID
+pub fn count_old_logs(
+    conn: &Connection,
+    cutoff: &DateTime<Utc>,
+    task_id: Option<&str>,
+) -> AppResult<usize> {
+    let cutoff_str = cutoff.to_rfc3339();
+    let count: i64 = match task_id {
+        Some(id) => conn.query_row(
+            "SELECT COUNT(*) FROM task_log WHERE end_time < ? AND id = ?",
+            rusqlite::params![cutoff_str, id],
+            |row| row.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COUNT(*) FROM task_log WHERE end_time < ?",
+            rusqlite::params![cutoff_str],
+            |row| row.get(0),
+        )?,
+    };
+    Ok(count as usize)
+}
+
+/// Delete log entries older than the given cutoff timestamp, optionally filtered by task ID
+pub fn delete_old_logs(
+    conn: &Connection,
+    cutoff: &DateTime<Utc>,
+    task_id: Option<&str>,
+) -> AppResult<usize> {
+    let cutoff_str = cutoff.to_rfc3339();
+    let rows_affected = match task_id {
+        Some(id) => conn.execute(
+            "DELETE FROM task_log WHERE end_time < ? AND id = ?",
+            rusqlite::params![cutoff_str, id],
+        )?,
+        None => conn.execute(
+            "DELETE FROM task_log WHERE end_time < ?",
+            rusqlite::params![cutoff_str],
+        )?,
+    };
+    Ok(rows_affected)
+}
+
+pub fn update_task_duration(conn: &Connection, id: &str, duration: i64) -> AppResult<()> {
+    conn.execute(
+        "UPDATE tasks SET duration = ? WHERE id = ?",
+        rusqlite::params![duration, id], // Use `rusqlite::params!` to handle mixed types
+    )?;
+    Ok(())
+}
