@@ -131,7 +131,6 @@ Keybindings inside the TUI:
 | `<` / `>`      | Cycle sort column                            |
 | `s`            | Toggle ascending / descending sort           |
 | `Enter`        | Drill into per-task history                  |
-| `S`            | Open settings (edit retention, etc.)         |
 | `d`            | Delete the selected task (asks to confirm)   |
 | `?`            | Toggle the help overlay                      |
 | `q`            | Quit                                         |
@@ -197,8 +196,26 @@ lastrun set-retention 2w                 # keep 2 weeks
 lastrun set-retention off                # disable auto-cleanup
 ```
 
-The retention setting can also be changed from the TUI — press `S` in the
-status view and edit the `log_retention` value.
+The retention setting can also be changed interactively via `lastrun settings`.
+
+### `settings`
+
+Open an interactive TUI for viewing and editing stored settings (currently
+just `log_retention`):
+
+```bash
+lastrun settings
+```
+
+Keybindings inside the TUI:
+
+| Key            | Action                                  |
+|----------------|------------------------------------------|
+| `Enter`        | Edit the selected setting (or save while editing) |
+| `Esc`          | Cancel the edit, or quit if not editing  |
+| `Backspace`    | Delete a character while editing         |
+| `?`            | Toggle the help overlay                  |
+| `q`            | Quit                                      |
 
 ### `reset`
 

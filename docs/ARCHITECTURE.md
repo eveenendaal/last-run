@@ -24,7 +24,8 @@ last-run/
 │       ├── mod.rs       # Re-exports, ANSI colour constants
 │       ├── json.rs      # JSON status output
 │       ├── table.rs     # prettytable log output
-│       └── tui.rs       # ratatui interactive status view
+│       ├── tui.rs       # ratatui interactive status view
+│       └── settings.rs  # ratatui interactive settings editor
 ├── tests/               # Unit + integration tests
 ├── examples/            # Example shell scripts
 ├── docs/                # This file
@@ -37,9 +38,9 @@ last-run/
 
 ### `cli.rs`
 clap-derived CLI: `start`, `done`/`update`, `check`, `logs`, `status`,
-`reset`, `delete`, `clear`, `archive`, `set-retention`, `completion`. Also home to
-`should_run_task()`, the shared "is this task overdue?" logic used by both
-the `check` command and the TUI's status colouring.
+`settings`, `reset`, `delete`, `clear`, `archive`, `set-retention`, `completion`.
+Also home to `should_run_task()`, the shared "is this task overdue?" logic
+used by both the `check` command and the TUI's status colouring.
 
 ### `db.rs`
 Resolves the database path (using `--db-path` CLI flag, `LASTRUN_DB_PATH`
@@ -76,6 +77,9 @@ returns data:
   `ratatui` + `crossterm`. Handles event loop, sort cycling, history
   drill-down, delete confirmation, and the `?` help overlay. Refresh
   cadence is 250 ms so elapsed counters tick live.
+- `display/settings.rs` — The interactive `lastrun settings` TUI for
+  viewing and editing key-value settings (e.g. `log_retention`). Shares
+  the controls bar and help-modal rendering with `tui.rs`.
 
 `display/mod.rs` re-exports the entry points and shared ANSI colour
 constants used by `main.rs`'s plain printf-style output.
@@ -128,6 +132,7 @@ small and changes are additive.
    - `display::print_task_logs` for `logs`.
    - `display::print_task_status_json` for `status --json`.
    - `display::run_tui` for `status` (default).
+   - `display::run_settings_tui` for `settings`.
 
 ## Versioning
 

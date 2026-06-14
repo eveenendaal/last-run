@@ -9,7 +9,10 @@ use chrono::Utc;
 use clap::Parser;
 use cli::{should_run_task, Cli, Commands};
 use db::update_task_duration;
-use display::{print_task_logs, print_task_status_json, run_tui, SortCol, BOLD, GREEN, RED, RESET, WHITE};
+use display::{
+    print_task_logs, print_task_status_json, run_settings_tui, run_tui, SortCol, BOLD, GREEN, RED,
+    RESET, WHITE,
+};
 use error::{AppError, AppResult};
 use format::{format_datetime, format_duration, parse_duration};
 use model::Task;
@@ -183,6 +186,10 @@ fn main() -> AppResult<()> {
                 };
                 run_tui(&conn, id, sort_col)?;
             }
+        }
+
+        Commands::Settings {} => {
+            run_settings_tui(&conn)?;
         }
 
         Commands::Reset {} => {

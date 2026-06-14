@@ -1,8 +1,10 @@
 pub mod json;
+pub mod settings;
 pub mod table;
 pub mod tui;
 
 pub use json::print_task_status_json;
+pub use settings::run_settings_tui;
 pub use table::print_task_logs;
 pub use tui::{run_tui, SortCol};
 
