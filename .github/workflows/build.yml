@@ -65,12 +65,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
-      - name: Rust Version Upgrade
+      - name: Compute next version
         id: version
-        uses: eveenendaal/github-actions/actions/rust-version-upgrade@master
-        with:
-          tag-prefix: 'v'
-          bump: 'patch'
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          current=${latest_tag#v}
+          if [ -z "$current" ]; then
+            current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          fi
+          IFS='.' read -r major minor patch <<< "$current"
+          next="${major}.${minor}.$((patch + 1))"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          sed -i '' "s/^version = \"$current\"/version = \"$next\"/" Cargo.toml
+          echo "Bumped $current -> $next"
 
       - name: Update Cargo.lock
         run: cargo update --workspace
@@ -89,20 +96,8 @@ jobs:
             (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
           done
 
-      # Persist the bumped Cargo.toml/Cargo.lock/VERSION to master and tag the
-      # release at that commit, so the source tarball (and from-source installs
-      # like homebrew-core) report the release version instead of the base one.
-      # Pushes made with the default GITHUB_TOKEN do not trigger new workflow
-      # runs; `[skip ci]` is added as belt-and-suspenders against a build loop.
-      - name: Commit version bump
-        id: commit
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Cargo.toml Cargo.lock VERSION
-          git commit -m "chore: release v${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:master
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Write VERSION file
+        run: echo "${{ steps.version.outputs.version }}" > VERSION
 
       - name: Create Release
         id: create_release
