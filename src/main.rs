@@ -55,6 +55,29 @@ fn main() -> AppResult<()> {
     db::init_db(&conn)?;
 
     match cli.command {
+        Commands::Start { id } => {
+            require_id(&id)?;
+
+            let mut task = Task::ensure(&conn, &id, cli.quiet)?;
+            task.start_time = Some(Utc::now());
+            task.last_run = None;
+            task.update(&conn)?;
+
+            if !cli.quiet {
+                println!(
+                    "{}{}Task {}{}{} started at {}{}{}",
+                    BOLD,
+                    GREEN,
+                    WHITE,
+                    task.id,
+                    GREEN,
+                    WHITE,
+                    format_datetime(&task.start_time.unwrap()),
+                    RESET
+                );
+            }
+        }
+
         Commands::Update { id } | Commands::Done { id } => {
             require_id(&id)?;
 
@@ -90,29 +113,6 @@ fn main() -> AppResult<()> {
             }
 
             auto_archive(&conn, cli.quiet)?;
-        }
-
-        Commands::Start { id } => {
-            require_id(&id)?;
-
-            let mut task = Task::ensure(&conn, &id, cli.quiet)?;
-            task.start_time = Some(Utc::now());
-            task.last_run = None;
-            task.update(&conn)?;
-
-            if !cli.quiet {
-                println!(
-                    "{}{}Task {}{}{} started at {}{}{}",
-                    BOLD,
-                    GREEN,
-                    WHITE,
-                    task.id,
-                    GREEN,
-                    WHITE,
-                    format_datetime(&task.start_time.unwrap()),
-                    RESET
-                );
-            }
         }
 
         Commands::Check { id, duration } => {
@@ -163,13 +163,6 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Logs { limit, id } => {
-            let logs = db::get_task_logs(&conn, id, limit)?;
-            if !cli.quiet {
-                print_task_logs(&logs);
-            }
-        }
-
         Commands::Status { id, sort, json } => {
             if json {
                 let tasks = db::get_all_tasks(&conn, id)?;
@@ -188,62 +181,13 @@ fn main() -> AppResult<()> {
             }
         }
 
-        Commands::Settings {} => {
-            run_settings_tui(&conn)?;
-        }
-
-        Commands::Reset {} => {
-            db::clean_db(&conn)?;
+        Commands::Logs { limit, id } => {
+            let logs = db::get_task_logs(&conn, id, limit)?;
             if !cli.quiet {
-                println!("{}{}Tasks table has been rebuilt.{}", BOLD, GREEN, RESET);
+                print_task_logs(&logs);
             }
         }
 
-        Commands::Delete { id } => {
-            require_id(&id)?;
-
-            let logs_deleted = db::delete_task_logs(&conn, &id)?;
-            let task_deleted = db::delete_task(&conn, &id)?;
-
-            if !cli.quiet {
-                if task_deleted > 0 {
-                    println!(
-                        "{}{}Task {}{}{} deleted. {} log entries removed.{}",
-                        BOLD, GREEN, WHITE, id, GREEN, logs_deleted, RESET
-                    );
-                } else {
-                    println!(
-                        "{}{}No task found with ID: {}{}{}. {} log entries removed.{}",
-                        BOLD, RED, WHITE, id, RED, logs_deleted, RESET
-                    );
-                }
-            }
-        }
-
-        Commands::Clear { id } => {
-            require_id(&id)?;
-            let mut task = match Task::select(&conn, &id)? {
-                Some(task) => task,
-                None => {
-                    if !cli.quiet {
-                        println!(
-                            "{}{}Task {}{}{} does not exist.{}",
-                            BOLD, RED, WHITE, id, RED, RESET
-                        );
-                    }
-                    return Ok(());
-                }
-            };
-            task.last_run = None;
-            task.start_time = None;
-            task.update(&conn)?;
-            if !cli.quiet {
-                println!(
-                    "{}{}Task {}{}{} cleared (start and done values reset).{}",
-                    BOLD, GREEN, WHITE, id, GREEN, RESET
-                );
-            }
-        }
         Commands::Archive { older_than, id, yes } => {
             // When no explicit threshold is given, fall back to the stored
             // retention setting (or 30 days). `get_log_retention_seconds`
@@ -341,6 +285,63 @@ fn main() -> AppResult<()> {
                     );
                 }
             }
+        }
+
+        Commands::Clear { id } => {
+            require_id(&id)?;
+            let mut task = match Task::select(&conn, &id)? {
+                Some(task) => task,
+                None => {
+                    if !cli.quiet {
+                        println!(
+                            "{}{}Task {}{}{} does not exist.{}",
+                            BOLD, RED, WHITE, id, RED, RESET
+                        );
+                    }
+                    return Ok(());
+                }
+            };
+            task.last_run = None;
+            task.start_time = None;
+            task.update(&conn)?;
+            if !cli.quiet {
+                println!(
+                    "{}{}Task {}{}{} cleared (start and done values reset).{}",
+                    BOLD, GREEN, WHITE, id, GREEN, RESET
+                );
+            }
+        }
+
+        Commands::Delete { id } => {
+            require_id(&id)?;
+
+            let logs_deleted = db::delete_task_logs(&conn, &id)?;
+            let task_deleted = db::delete_task(&conn, &id)?;
+
+            if !cli.quiet {
+                if task_deleted > 0 {
+                    println!(
+                        "{}{}Task {}{}{} deleted. {} log entries removed.{}",
+                        BOLD, GREEN, WHITE, id, GREEN, logs_deleted, RESET
+                    );
+                } else {
+                    println!(
+                        "{}{}No task found with ID: {}{}{}. {} log entries removed.{}",
+                        BOLD, RED, WHITE, id, RED, logs_deleted, RESET
+                    );
+                }
+            }
+        }
+
+        Commands::Reset {} => {
+            db::clean_db(&conn)?;
+            if !cli.quiet {
+                println!("{}{}Tasks table has been rebuilt.{}", BOLD, GREEN, RESET);
+            }
+        }
+
+        Commands::Settings {} => {
+            run_settings_tui(&conn)?;
         }
 
         // Add a new subcommand for completions

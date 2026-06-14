@@ -34,6 +34,14 @@ pub enum SortColumn {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    // --- Daily workflow ---
+    /// Start a task
+    Start {
+        /// Task ID to start
+        #[arg(short, long)]
+        id: String,
+    },
+
     /// Update a task's last run time
     Update {
         /// Task ID to update
@@ -48,13 +56,6 @@ pub enum Commands {
         id: String,
     },
 
-    /// Start a task
-    Start {
-        /// Task ID to start
-        #[arg(short, long)]
-        id: String,
-    },
-
     /// Check if a task is due to run
     Check {
         /// Task ID to check
@@ -64,17 +65,6 @@ pub enum Commands {
         /// Duration threshold (e.g., 24h, 7d)
         #[arg(short, long, default_value = "24h")]
         duration: String,
-    },
-
-    /// Display execution logs for tasks
-    Logs {
-        /// Limit number of logs to show (0 for all)
-        #[arg(short, long, default_value = "20")]
-        limit: usize,
-
-        /// Filter logs by task ID
-        #[arg(short, long)]
-        id: Option<String>,
     },
 
     /// Display current status of all tasks
@@ -92,24 +82,16 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Interactively view and edit settings (e.g. log retention)
-    Settings {},
+    // --- Logs & history ---
+    /// Display execution logs for tasks
+    Logs {
+        /// Limit number of logs to show (0 for all)
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
 
-    /// Reset the tasks database
-    Reset {},
-
-    /// Delete a task and its log records by ID
-    Delete {
-        /// Task ID to delete
+        /// Filter logs by task ID
         #[arg(short, long)]
-        id: String,
-    },
-
-    /// Clear a task's start and done values
-    Clear {
-        /// Task ID to clear
-        #[arg(short, long)]
-        id: String,
+        id: Option<String>,
     },
 
     /// Delete log entries older than a specified period (defaults to the stored retention setting, or 30d)
@@ -132,6 +114,28 @@ pub enum Commands {
         /// Retention duration (e.g. 30d, 2w, 3m, 24h) or "off"/"0" to disable auto-cleanup
         duration: String,
     },
+
+    // --- Task management ---
+    /// Clear a task's start and done values
+    Clear {
+        /// Task ID to clear
+        #[arg(short, long)]
+        id: String,
+    },
+
+    /// Delete a task and its log records by ID
+    Delete {
+        /// Task ID to delete
+        #[arg(short, long)]
+        id: String,
+    },
+
+    /// Reset the tasks database
+    Reset {},
+
+    // --- Configuration & tooling ---
+    /// Interactively view and edit settings (e.g. log retention)
+    Settings {},
 
     /// Generate shell completion for your shell
     Completion {
