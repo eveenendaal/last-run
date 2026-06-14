@@ -39,21 +39,19 @@ Releases are produced by `.github/workflows/build.yml` on push to `master`:
    `aarch64-apple-darwin` and `x86_64-apple-darwin` — using
    `task build TARGET=...`. (Apple Silicon runners cross-compile the x86_64
    target.)
-3. Each binary is uploaded to the GitHub release as
+3. The bumped `Cargo.toml`, `Cargo.lock`, and `VERSION` are committed back to
+   `master` (`chore: release vX.Y.Z [skip ci]`) and the release tag is created
+   at that commit (`target_commitish`). This keeps the in-repo version in sync
+   with the tag, so the source tarball — and any from-source build (homebrew-core)
+   — reports the release version.
+4. Each binary is uploaded to the GitHub release as
    `lastrun-<target>` plus a `lastrun-<target>.sha256`, alongside `VERSION`.
-4. Only the 3 most recent releases are kept.
+5. Only the 3 most recent releases are kept.
 
 To add more targets (e.g. Linux), extend the `TARGETS` env in the `build` job and
 the `files:` list in the Create Release step. Linux/Windows targets need their own
 runners or a cross-compilation setup (e.g. `cross`), since the matrix currently
 relies on a macOS runner.
-
-> **Version caveat**: the version bump is ephemeral — it sets the version in the
-> workflow workspace before building but is **not committed**, so in-repo
-> `Cargo.toml` stays at its base version while git tags advance (`v1.0.x`).
-> A from-source build (like homebrew-core's) therefore reports the `Cargo.toml`
-> version, not the tag. Align `Cargo.toml`'s `version` with the release tag before
-> relying on `lastrun --version` matching the published version.
 
 ## Homebrew (homebrew-core)
 
@@ -74,7 +72,8 @@ relies on a macOS runner.
 
 ## Conventions
 
-- Version lives in git tags (`v*`), bumped automatically (patch) on release.
+- Version is bumped automatically (patch) on release and committed back to
+  `master`, so git tags (`v*`) and `Cargo.toml` stay in sync.
 - Dependabot PRs are auto-merged (`.github/workflows/auto-merge.yml`); PRs run
   `.github/workflows/test.yml`.
 - Always run `task test` before committing.
