@@ -118,18 +118,6 @@ jobs:
             dist/lastrun-x86_64-apple-darwin.sha256
             VERSION
 
-      - name: Generate Homebrew Formula
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          URL="https://github.com/eveenendaal/last-run/archive/refs/tags/v${VERSION}.tar.gz"
-          SHA256=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
-          sed "s|url \".*\"|url \"${URL}\"|" packaging/homebrew/lastrun.rb \
-            | sed "s|sha256 \".*\"|sha256 \"${SHA256}\"|" \
-            > dist/lastrun.rb
-          gh release upload "v${VERSION}" dist/lastrun.rb
-
       - name: Remove old releases
         uses: actions/github-script@v9
         with:
@@ -147,17 +135,3 @@ jobs:
               });
             }
 
-      # Releases created with the default GITHUB_TOKEN do not trigger the
-      # `release: published` event, so dispatch the Homebrew workflow with a PAT.
-      - name: Trigger Homebrew publish
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'homebrew.yml',
-              ref: 'master',
-              inputs: { tag: 'v${{ steps.version.outputs.version }}' }
-            })

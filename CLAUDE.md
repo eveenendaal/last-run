@@ -2,8 +2,8 @@
 
 A Rust CLI (`lastrun`) that tracks when tasks were last run — start/complete/fail
 times, history, and a TUI status view. Storage is SQLite (via `rusqlite`).
-This is a **public, open-source** project distributed through **homebrew-core**
-(`brew install lastrun`).
+This is a **public, open-source** project. Binaries are available on the
+[GitHub releases page](https://github.com/eveenendaal/last-run/releases).
 
 ## Working Effectively
 
@@ -23,8 +23,7 @@ Source lives in `src/` (`main.rs`, `cli.rs`, `db.rs`, `model.rs`, `format.rs`,
 ### SQLite is bundled
 `rusqlite` is configured with the `bundled` feature (`Cargo.toml`), so SQLite is
 compiled into the binary. The result is self-contained — no `libsqlite3` runtime
-dependency, which keeps the release binaries portable and the Homebrew formula
-dependency-free. Enabling/disabling this feature changes `Cargo.lock`; CI runs
+dependency, which keeps the release binaries portable. Enabling/disabling this feature changes `Cargo.lock`; CI runs
 `cargo update --workspace` before building, so keep the committed lockfile in
 sync if you build locally with `--locked`.
 
@@ -33,47 +32,24 @@ sync if you build locally with `--locked`.
 Releases are produced by `.github/workflows/build.yml` on push to `master`:
 
 1. `test` job (Ubuntu) runs `task test`.
-2. `build` job (macOS, Apple Silicon) bumps the version
-   (`eveenendaal/github-actions/actions/rust-version-upgrade`, tag prefix `v`,
-   patch bump), refreshes `Cargo.lock`, then builds **both macOS targets** —
-   `aarch64-apple-darwin` and `x86_64-apple-darwin` — using
-   `task build TARGET=...`. (Apple Silicon runners cross-compile the x86_64
-   target.)
-3. The bumped `Cargo.toml`, `Cargo.lock`, and `VERSION` are committed back to
-   `master` (`chore: release vX.Y.Z [skip ci]`) and the release tag is created
-   at that commit (`target_commitish`). This keeps the in-repo version in sync
-   with the tag, so the source tarball — and any from-source build (homebrew-core)
-   — reports the release version.
-4. Each binary is uploaded to the GitHub release as
-   `lastrun-<target>` plus a `lastrun-<target>.sha256`, alongside `VERSION`.
-5. Only the 3 most recent releases are kept.
+2. `build` job (macOS, Apple Silicon) computes the next patch version from the
+   latest git tag, updates `Cargo.toml` locally, refreshes `Cargo.lock`, then
+   builds **both macOS targets** — `aarch64-apple-darwin` and
+   `x86_64-apple-darwin` — using `task build TARGET=...`. (Apple Silicon runners
+   cross-compile the x86_64 target.) No commit is pushed back to `master`.
+3. `softprops/action-gh-release` creates the release tag (`v*`) and uploads
+   the binaries. The `VERSION` file is generated in the runner and uploaded as
+   a release asset.
+4. Only the 3 most recent releases are kept.
 
 To add more targets (e.g. Linux), extend the `TARGETS` env in the `build` job and
 the `files:` list in the Create Release step. Linux/Windows targets need their own
 runners or a cross-compilation setup (e.g. `cross`), since the matrix currently
 relies on a macOS runner.
 
-## Homebrew (homebrew-core)
-
-`lastrun` is published to the official **homebrew-core** tap.
-
-- `.github/workflows/homebrew.yml` runs `dawidd6/action-homebrew-bump-formula`
-  on each published release (dispatched from `build.yml` with a PAT, because
-  releases made by `GITHUB_TOKEN` don't fire the `release` event). It opens a
-  version-bump PR against homebrew-core.
-- **Required secret**: `HOMEBREW_GITHUB_TOKEN` — a classic PAT (`public_repo` +
-  `workflow`) on an account that has forked `Homebrew/homebrew-core`. This must
-  be added in the repo settings; it cannot be created from code.
-- **First submission is manual**: homebrew-core reviews the initial formula.
-  Each release automatically generates `lastrun.rb` (with the correct URL and
-  `sha256`) and attaches it as a release asset. Download it from the latest
-  release, copy it into homebrew-core's `Formula/l/lastrun.rb`, and open a PR
-  by hand. The workflow automates every bump after acceptance.
-
 ## Conventions
 
-- Version is bumped automatically (patch) on release and committed back to
-  `master`, so git tags (`v*`) and `Cargo.toml` stay in sync.
+- Version lives in git tags (`v*`), bumped automatically (patch) on release.
 - Dependabot PRs are auto-merged (`.github/workflows/auto-merge.yml`); PRs run
   `.github/workflows/test.yml`.
 - Always run `task test` before committing.
