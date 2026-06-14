@@ -5,4 +5,4 @@ pub mod error;
 pub mod format;
 pub mod model;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = env!("APP_VERSION");

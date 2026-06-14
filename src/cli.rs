@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(author, name = "lastrun", version, about = "A utility to track when tasks were last run", long_about = None)]
+#[command(author, name = "lastrun", version = env!("APP_VERSION"), about = "A utility to track when tasks were last run", long_about = None)]
 pub struct Cli {
     /// Suppress output messages
     #[arg(short, long)]

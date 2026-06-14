@@ -76,8 +76,9 @@ jobs:
           IFS='.' read -r major minor patch <<< "$current"
           next="${major}.${minor}.$((patch + 1))"
           echo "version=$next" >> "$GITHUB_OUTPUT"
-          sed -i '' "s/^version = \"$current\"/version = \"$next\"/" Cargo.toml
-          echo "Bumped $current -> $next"
+          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          sed -i '' "s/^version = \"$cargo_version\"/version = \"$next\"/" Cargo.toml
+          echo "Bumped Cargo.toml $cargo_version -> $next (tag-based: $current -> $next)"
 
       - name: Update Cargo.lock
         run: cargo update --workspace
@@ -88,6 +89,8 @@ jobs:
           cache-key-prefix: 'release-'
 
       - name: Build App
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
           for target in $TARGETS; do

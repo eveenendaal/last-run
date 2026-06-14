@@ -27,14 +27,16 @@ serde_json = "1.0"
     
     fs::write(temp_cargo, original_content).unwrap();
     
-    // Test version replacement
-    let output = Command::new("sed")
-        .arg("-i")
-        .arg("s/^version = \".*\"/version = \"1.0.0\"/")
-        .arg(temp_cargo)
-        .output()
-        .expect("Failed to execute sed command");
-    
+    // Test version replacement — macOS sed -i requires an explicit empty extension
+    let mut cmd = Command::new("sed");
+    cmd.arg("-i");
+    if cfg!(target_os = "macos") {
+        cmd.arg("");
+    }
+    cmd.arg("s/^version = \".*\"/version = \"1.0.0\"/")
+        .arg(temp_cargo);
+    let output = cmd.output().expect("Failed to execute sed command");
+
     assert!(output.status.success(), "sed command failed: {:?}", output);
     
     // Verify the version was updated
