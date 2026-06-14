@@ -47,7 +47,6 @@ Builds are published for:
 - `aarch64-apple-darwin` (Apple Silicon Mac)
 - `x86_64-apple-darwin` (Intel Mac)
 - `x86_64-unknown-linux-gnu` (Linux)
-- `x86_64-pc-windows-msvc` (Windows)
 
 Each binary includes a matching `.sha256` checksum file.
 

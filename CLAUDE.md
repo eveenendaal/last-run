@@ -39,7 +39,6 @@ Releases are produced by `.github/workflows/build.yml` on push to `master`:
    - **macOS** (Apple Silicon): `aarch64-apple-darwin` + cross-compiled
      `x86_64-apple-darwin`
    - **Linux**: `x86_64-unknown-linux-gnu`
-   - **Windows**: `x86_64-pc-windows-msvc`
    
    Each runner downloads the patched manifests, builds with `--locked`, and
    uploads its binaries as an artifact. The version from `build.rs` is fed in

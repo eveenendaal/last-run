@@ -102,9 +102,6 @@ jobs:
           - os: ubuntu-latest
             targets: "x86_64-unknown-linux-gnu"
             artifact-name: linux-binaries
-          - os: windows-latest
-            targets: "x86_64-pc-windows-msvc"
-            artifact-name: windows-binaries
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
       TARGETS: ${{ matrix.targets }}
@@ -131,12 +128,8 @@ jobs:
           for target in $TARGETS; do
             rustup target add "$target"
             cargo build --release --locked --target "$target"
-            bin="lastrun"
-            case "$target" in
-              *windows*) bin="lastrun.exe" ;;
-            esac
-            cp "target/$target/release/$bin" "dist/$bin-$target"
-            (cd dist && shasum -a 256 "$bin-$target" > "$bin-$target.sha256")
+            cp "target/$target/release/lastrun" "dist/lastrun-$target"
+            (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
           done
 
       - name: Upload artifacts
@@ -167,7 +160,6 @@ jobs:
           files: |
             macos-binaries/*
             linux-binaries/*
-            windows-binaries/*
             VERSION
 
       - name: Remove old releases
