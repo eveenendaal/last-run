@@ -53,7 +53,12 @@ jobs:
     defaults:
       run:
         shell: bash
-    
+
+    # macos-latest runners are Apple Silicon, which can also cross-compile to
+    # x86_64-apple-darwin, so both macOS architectures are built from one job.
+    env:
+      TARGETS: "aarch64-apple-darwin x86_64-apple-darwin"
+
     steps:
       - uses: actions/checkout@v6
         with:
@@ -76,7 +81,13 @@ jobs:
           cache-key-prefix: 'release-'
 
       - name: Build App
-        run: task build
+        run: |
+          mkdir -p dist
+          for target in $TARGETS; do
+            task build TARGET="$target"
+            cp "target/$target/release/lastrun" "dist/lastrun-$target"
+            (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
+          done
 
       - name: Create Release
         id: create_release
@@ -85,8 +96,10 @@ jobs:
           name: Release v${{ steps.version.outputs.version }}
           tag_name: v${{ steps.version.outputs.version }}
           files: |
-            target/release/lastrun
-            target/release/lastrun.sha256
+            dist/lastrun-aarch64-apple-darwin
+            dist/lastrun-aarch64-apple-darwin.sha256
+            dist/lastrun-x86_64-apple-darwin
+            dist/lastrun-x86_64-apple-darwin.sha256
             VERSION
 
       - name: Remove old releases
@@ -106,13 +119,17 @@ jobs:
               });
             }
 
-      - uses: actions/github-script@v9
+      # Releases created with the default GITHUB_TOKEN do not trigger the
+      # `release: published` event, so dispatch the Homebrew workflow with a PAT.
+      - name: Trigger Homebrew publish
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
-              owner: 'eveenendaal',
-              repo: 'homebrew-tap',
-              workflow_id: 'update-formulas.yml',
-              ref: 'master'
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'homebrew.yml',
+              ref: 'master',
+              inputs: { tag: 'v${{ steps.version.outputs.version }}' }
             })

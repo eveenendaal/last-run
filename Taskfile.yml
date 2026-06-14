@@ -10,10 +10,17 @@ tasks:
     cmds:
       - cargo test --locked
   build:
-    desc: Build LastRun
+    desc: Build LastRun (optionally for a specific target, e.g. TARGET=x86_64-apple-darwin)
     cmds:
-      - cargo build --release --locked
-      - cd target/release && shasum -a 256 lastrun > lastrun.sha256
+      - |
+        if [ -n "{{.TARGET}}" ]; then
+          rustup target add {{.TARGET}}
+          cargo build --release --locked --target {{.TARGET}}
+          cd target/{{.TARGET}}/release && shasum -a 256 lastrun > lastrun.sha256
+        else
+          cargo build --release --locked
+          cd target/release && shasum -a 256 lastrun > lastrun.sha256
+        fi
   status:
     desc: Run the LastRun status TUI
     cmds:
