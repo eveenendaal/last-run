@@ -1,9 +1,10 @@
 use crate::error::{AppError, AppResult};
 use crate::format::parse_rfc3339_opt;
 use chrono::{DateTime, Utc};
-use dirs::home_dir;
+use dirs::{data_dir, home_dir};
 use rusqlite::Connection;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 pub fn init_db(conn: &Connection) -> AppResult<()> {
     conn.execute(
@@ -33,16 +34,57 @@ pub fn init_db(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-pub fn get_file_based_connection() -> AppResult<Connection> {
-    let home = home_dir().ok_or(AppError::HomeDirectoryNotFound)?;
-    let db_dir = home.join(".tasks");
+pub fn get_file_based_connection(db_path_override: Option<PathBuf>) -> AppResult<Connection> {
+    let is_default = db_path_override.is_none();
+    let db_path = resolve_db_path(db_path_override)?;
 
-    fs::create_dir_all(&db_dir)?;
+    if is_default {
+        maybe_migrate_old_data(&db_path).ok();
+    }
 
-    let db_path = db_dir.join("data.db");
-    let conn = Connection::open(db_path)?;
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
+    let conn = Connection::open(&db_path)?;
     Ok(conn)
+}
+
+fn resolve_db_path(db_path_override: Option<PathBuf>) -> AppResult<PathBuf> {
+    match db_path_override {
+        Some(path) => Ok(path),
+        None => default_db_path(),
+    }
+}
+
+fn default_db_path() -> AppResult<PathBuf> {
+    let data_dir = data_dir().ok_or(AppError::DataDirectoryNotFound)?;
+    Ok(data_dir.join("lastrun").join("data.db"))
+}
+
+fn maybe_migrate_old_data(new_path: &Path) -> AppResult<()> {
+    let old_path = home_dir().map(|h| h.join(".tasks").join("data.db"));
+
+    if let Some(old_path) = old_path {
+        if old_path.exists() && !new_path.exists() {
+            if let Some(parent) = new_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::rename(&old_path, new_path)?;
+            if let Some(old_dir) = old_path.parent() {
+                let _ = fs::remove_dir(old_dir);
+            }
+        } else if old_path.exists() && new_path.exists() {
+            eprintln!(
+                "Warning: old database at {} and new database at {} both exist.\n  Using new location. Remove the old file manually:\n  rm {}",
+                old_path.display(),
+                new_path.display(),
+                old_path.display()
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Get all task logs from the database

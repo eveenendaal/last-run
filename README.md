@@ -9,8 +9,20 @@ duration thresholds, and an interactive TUI status view.
 
 LastRun is built for cron jobs, scheduled scripts, and any recurring
 operation where you want to know *when* it last finished and *whether* it's
-due to run again. State is kept in a single SQLite file at `~/.tasks/data.db`
-(SQLite is statically linked, so the binary has no runtime dependencies).
+due to run again. State is kept in a single SQLite file at a
+platform-appropriate location (SQLite is statically linked, so the binary
+has no runtime dependencies):
+
+- **macOS:** `~/Library/Application Support/lastrun/data.db`
+- **Linux:** `~/.local/share/lastrun/data.db`
+- **Windows:** `%APPDATA%\lastrun\data.db`
+
+Override the path with `--db-path` or the `LASTRUN_DB_PATH` environment
+variable. See `lastrun --help` for details.
+
+> **Migration from 1.x:** Existing databases at `~/.tasks/data.db` are
+> automatically moved to the new location on first run. The old `~/.tasks/`
+> directory is removed if empty. No action is needed.
 
 ## Features
 

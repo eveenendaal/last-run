@@ -42,9 +42,12 @@ clap-derived CLI: `start`, `done`/`update`, `check`, `logs`, `status`,
 the `check` command and the TUI's status colouring.
 
 ### `db.rs`
-Opens the SQLite connection at `~/.tasks/data.db` (the directory is created
-on demand) and provides typed CRUD helpers. Every query goes through
-parameterized bindings — no string concatenation of user input into SQL.
+Resolves the database path (using `--db-path` CLI flag, `LASTRUN_DB_PATH`
+env var, or `dirs::data_dir()` as default), creates the directory on demand,
+and provides typed CRUD helpers. On first run with the new default path,
+data is automatically migrated from the old `~/.tasks/data.db` location.
+Every query goes through parameterized bindings — no string concatenation
+of user input into SQL.
 
 ### `model.rs`
 `Task` is the in-memory representation of a row from the `tasks` table.
@@ -134,7 +137,7 @@ built from a checkout where `Cargo.toml` lags behind the latest tag.
 - **rusqlite** (`bundled`) — SQLite, statically linked
 - **chrono** — timestamps
 - **clap** + **clap_complete** — CLI parsing and shell completion
-- **dirs** — locating `~/.tasks/`
+- **dirs** — locating the platform data directory for the default DB path
 - **thiserror** — error type derivation
 - **prettytable-rs** — log table rendering
 - **serde_json** — JSON status output

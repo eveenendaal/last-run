@@ -17,8 +17,8 @@ pub enum AppError {
     #[error("Task ID is required")]
     MissingTaskId,
 
-    #[error("Home directory not found")]
-    HomeDirectoryNotFound,
+    #[error("Data directory not found")]
+    DataDirectoryNotFound,
 }
 
 pub type AppResult<T> = Result<T, AppError>;

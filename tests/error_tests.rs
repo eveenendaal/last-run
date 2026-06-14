@@ -22,9 +22,9 @@ fn test_error_conversion() {
     assert_eq!(error_msg, "Task ID is required");
 
     // Test home directory not found error
-    let home_dir_error = AppError::HomeDirectoryNotFound;
-    let error_msg = format!("{}", home_dir_error);
-    assert_eq!(error_msg, "Home directory not found");
+    let data_dir_error = AppError::DataDirectoryNotFound;
+    let error_msg = format!("{}", data_dir_error);
+    assert_eq!(error_msg, "Data directory not found");
 }
 
 #[test]

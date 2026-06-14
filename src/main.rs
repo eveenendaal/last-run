@@ -27,7 +27,7 @@ fn require_id(id: &str) -> AppResult<()> {
 fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
-    let conn = db::get_file_based_connection()?;
+    let conn = db::get_file_based_connection(cli.db_path)?;
     db::init_db(&conn)?;
 
     match cli.command {

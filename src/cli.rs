@@ -1,10 +1,15 @@
 use crate::format::format_duration;
 use chrono::{DateTime, Duration, Utc};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(author, name = "lastrun", version = env!("APP_VERSION"), about = "A utility to track when tasks were last run", long_about = None)]
 pub struct Cli {
+    /// Path to the database file
+    #[arg(long, env = "LASTRUN_DB_PATH", value_hint = ValueHint::AnyPath)]
+    pub db_path: Option<PathBuf>,
+
     /// Suppress output messages
     #[arg(short, long)]
     pub quiet: bool,
