@@ -1,6 +1,6 @@
 [package]
 name = "lastrun"
-version = "1.0.67"
+version = "1.1.0"
 edition = "2021"
 authors = ["Eric Veenendaal"]
 description = "A utility to track when tasks were last run"
