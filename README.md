@@ -1,229 +1,256 @@
 # LastRun
 
-A utility to track when tasks were last run.
+A small CLI for tracking when tasks last ran — start/done times, history,
+duration thresholds, and an interactive TUI status view.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Overview
 
-LastRun is a command-line utility that helps you track task execution history. It's perfect for monitoring cron jobs, scheduled tasks, or any recurring operations where you need to know when something last ran and whether it succeeded.
+LastRun is built for cron jobs, scheduled scripts, and any recurring
+operation where you want to know *when* it last finished and *whether* it's
+due to run again. State is kept in a single SQLite file at `~/.tasks/data.db`
+(SQLite is statically linked, so the binary has no runtime dependencies).
 
 ## Features
 
-- ✅ Track task start, completion, and failure times
-- 📊 View task history and logs
-- 🔍 Filter and search task executions
-- 🗑️ Clean up old task records
-- 🔄 Reset database when needed
-- 🎨 Pretty table output or JSON format
-- 🤫 Quiet mode for scripting
-- ⚡ Shell completion support
+- Record start and completion times for any task by ID
+- `check` exits non-zero when a task is overdue — drop it into cron / shell
+  pipelines to gate work
+- Interactive `status` TUI with sortable columns, per-task history, and
+  duration stats
+- `--json` snapshot for scripts and dashboards
+- Log archival with confirmation prompt
+- Zsh tab completion
+- `--quiet` flag for non-interactive use
 
 ## Installation
 
-### From Source
+### Pre-built binaries
+
+Download a release from the
+[GitHub releases page](https://github.com/eveenendaal/last-run/releases).
+Builds are published for `aarch64-apple-darwin` and `x86_64-apple-darwin`,
+each with a matching `.sha256`.
+
+### From source
 
 ```bash
-git clone https://github.com/yourusername/LastRun.git
-cd LastRun
+git clone https://github.com/eveenendaal/last-run.git
+cd last-run
 cargo build --release
 cp target/release/lastrun /usr/local/bin/
 ```
 
-## Quick Start
+Or, with [Task](https://taskfile.dev):
 
 ```bash
-# Start tracking a task
+task install     # cargo install --path . --locked
+```
+
+## Quick start
+
+```bash
+# Record that a task is starting
 lastrun start --id my-task
 
-# Complete the task
-lastrun complete --id my-task
+# ...do the work...
 
-# List all tasks
-lastrun list
+# Record completion (also records elapsed time if you called start first)
+lastrun done --id my-task
 
-# View task logs
-lastrun logs --id my-task
+# Look at the current state of every tracked task
+lastrun status
+
+# In a cron job: only run if the last successful run was more than 24h ago
+lastrun --quiet check --id my-task --duration 24h || run-the-thing
 ```
 
-## Usage
+## Commands
 
-### Start a Task
+### `start` / `done` / `update`
 
-Begin tracking a new task execution:
+`start` stamps the task with a start time and clears any previous last-run
+time. `done` (also aliased as `update`) stamps the last-run time and, if a
+start time was recorded, writes an elapsed-time entry to the log.
 
 ```bash
-lastrun start --id my-task
+lastrun start --id backup
+lastrun done  --id backup
 ```
 
-Or using short options:
-```bash
-lastrun start -i my-task
-```
+The short flag `-i` works everywhere `--id` does.
 
-### Complete a Task
+### `check`
 
-Mark a task as successfully completed:
-
-```bash
-lastrun complete --id my-task
-```
-
-### Mark Task as Failed
-
-Record a task failure:
+Check whether a task is due to run again. Exits **0** if the task ran within
+the threshold, **1** if it's overdue (or has never run, or doesn't exist).
+The duration accepts `h`, `d`, `w`, and `m` suffixes (hours, days, weeks,
+months-of-30-days) — e.g. `24h`, `7d`, `2w`, `3m`.
 
 ```bash
-lastrun fail --id my-task
+lastrun check --id backup --duration 24h
+echo $?     # 0 if not yet due, 1 if due
 ```
 
-### List All Tasks
+The threshold passed to `check` is persisted on the task, so the TUI status
+view can colour rows based on what *that* task considers stale.
 
-Display all tracked tasks:
+### `status`
+
+With no flags, opens an interactive TUI showing every tracked task:
 
 ```bash
-lastrun list
+lastrun status
 ```
 
-### View Task Logs
+Keybindings inside the TUI:
 
-Display logs for tasks:
+| Key            | Action                                       |
+|----------------|----------------------------------------------|
+| `↑` / `↓`      | Move selection                               |
+| `PgUp` / `PgDn`| Page through the task list                   |
+| `<` / `>`      | Cycle sort column                            |
+| `s`            | Toggle ascending / descending sort           |
+| `Enter`        | Drill into per-task history                  |
+| `d`            | Delete the selected task (asks to confirm)   |
+| `?`            | Toggle the help overlay                      |
+| `q`            | Quit                                         |
+
+For scripts and dashboards, use `--json`:
 
 ```bash
-lastrun logs
+lastrun status --json
 ```
 
-To filter logs by a specific task ID:
+The status view sorts by last-run time by default; override with
+`--sort task|status|duration|elapsed|last-run`.
+
+### `logs`
+
+Show the most recent completion log entries (each entry has a task ID, an
+end time, and the elapsed time between `start` and `done`):
 
 ```bash
-lastrun logs --id my-task
+lastrun logs                       # 20 most recent across all tasks
+lastrun logs --id backup           # filter to one task
+lastrun logs --id backup --limit 5 # cap at 5
+lastrun logs --limit 0             # no limit
 ```
 
-Or using short options:
-```bash
-lastrun logs -i my-task
-```
+### `clear`
 
-To change the number of logs displayed (default is 20):
-
-```bash
-lastrun logs --limit 50
-```
-
-Or combine both options:
-```bash
-lastrun logs -i my-task -l 50
-```
-
-### Reset Database
-
-Reset the tasks database, rebuilding the tables:
+Reset just the timing fields on a task without deleting its history:
 
 ```bash
-lastrun reset
+lastrun clear --id backup
 ```
 
-### Delete Task Records
+### `delete`
 
-Delete a task and all its log entries:
+Remove a task and every log entry attached to it:
 
 ```bash
-lastrun delete --id my-task
+lastrun delete --id backup
 ```
 
-Or using the short option:
-```bash
-lastrun delete -i my-task
-```
+### `archive`
 
-### Quiet Mode
-
-Add the `-q` or `--quiet` flag to suppress output messages:
+Delete log entries older than a threshold. By default it asks for
+confirmation; pass `--yes` to skip the prompt.
 
 ```bash
-lastrun start --id my-task -q
+lastrun archive --older-than 30d           # asks before deleting
+lastrun archive --older-than 30d --yes     # no prompt
+lastrun archive --older-than 7d --id backup  # only for one task
 ```
 
-### Command Line Auto Completion
+### `reset`
 
-To enable zsh auto-completion, add the following to your `~/.zshrc`:
+Drop and recreate the `tasks` table — wipes every task but keeps the
+`task_log` history. Mostly useful when the schema is in a weird state.
 
-```sh
-source <(lastrun completion zsh)
-```
+### `completion`
 
-Restart your terminal or run `source ~/.zshrc` to activate tab completion for lastrun commands and options.
+Print a zsh completion script:
 
-For bash completion:
 ```bash
-source <(lastrun completion bash)
+echo 'source <(lastrun completion zsh)' >> ~/.zshrc
+```
+
+(Bash, fish, etc. are not currently wired up.)
+
+### Quiet mode
+
+`--quiet` (`-q`) is a top-level flag — pass it **before** the subcommand
+to suppress informational output. Errors and exit codes are unchanged,
+which makes the flag safe to use in cron.
+
+```bash
+lastrun --quiet start --id backup
+lastrun -q check --id backup --duration 24h
 ```
 
 ## Examples
 
-See the [examples/](examples/) directory for more usage examples:
-- [basic_usage.sh](examples/basic_usage.sh) - Simple task tracking
-- [cron_integration.sh](examples/cron_integration.sh) - Using with cron jobs
+See the [`examples/`](examples/) directory:
+
+- [`basic_usage.sh`](examples/basic_usage.sh) — start / done / status / logs
+  walkthrough
+- [`cron_integration.sh`](examples/cron_integration.sh) — using `check` to
+  gate work and `start`/`done` to record timing in a cron job
 
 ## Development
 
-### Building
+The project uses [Task](https://taskfile.dev) to wrap the common Cargo
+invocations:
 
 ```bash
-cargo build
+task test                    # cargo test --locked
+task build                   # release build + SHA256 (native target)
+task build TARGET=<triple>   # release build for a specific target triple
+task install                 # cargo install --path . --locked
+task status                  # run the status TUI against your local DB
+task clean                   # cargo clean
 ```
 
-Or using the task runner:
-```bash
-task build
-```
+Run `task test` before committing — that's what CI runs on every PR.
 
-### Running Tests
-
-```bash
-cargo test
-```
-
-Or:
-```bash
-task test
-```
-
-### Available Tasks
-
-View all available tasks:
-```bash
-task --list
-```
-
-## Project Structure
+## Project structure
 
 ```
-LastRun/
-├── src/              # Source code
-│   ├── main.rs       # Entry point
-│   ├── lib.rs        # Library root
-│   ├── cli.rs        # Command-line interface
-│   ├── db.rs         # Database operations
-│   ├── model.rs      # Data models
-│   ├── error.rs      # Error handling
-│   ├── format.rs     # Output formatting
-│   └── display.rs    # Display logic
-├── tests/            # Integration and unit tests
-├── docs/             # Documentation
-├── examples/         # Usage examples
-└── Cargo.toml        # Project metadata
+last-run/
+├── src/
+│   ├── main.rs          # Command dispatch
+│   ├── lib.rs           # Library root + APP_VERSION
+│   ├── cli.rs           # clap definitions, should_run_task()
+│   ├── db.rs            # SQLite connection, schema, CRUD
+│   ├── model.rs         # Task struct + persistence
+│   ├── error.rs         # thiserror-based error type
+│   ├── format.rs        # Duration parsing/formatting
+│   └── display/
+│       ├── mod.rs       # Re-exports + ANSI colour constants
+│       ├── json.rs      # JSON status output
+│       ├── table.rs     # prettytable log output
+│       └── tui.rs       # ratatui interactive status view
+├── tests/               # Unit + integration tests
+├── examples/            # Example shell scripts
+├── docs/                # Architecture notes
+├── build.rs             # Injects APP_VERSION from git tag / RELEASE_VERSION
+├── Taskfile.yml         # Task runner definitions
+└── Cargo.toml
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a deeper architecture
+description.
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Author
 

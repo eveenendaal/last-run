@@ -33,14 +33,20 @@ Releases are produced by `.github/workflows/build.yml` on push to `master`:
 
 1. `test` job (Ubuntu) runs `task test`.
 2. `build` job (macOS, Apple Silicon) computes the next patch version from the
-   latest git tag, updates `Cargo.toml` locally, refreshes `Cargo.lock`, then
-   builds **both macOS targets** — `aarch64-apple-darwin` and
-   `x86_64-apple-darwin` — using `task build TARGET=...`. (Apple Silicon runners
-   cross-compile the x86_64 target.) No commit is pushed back to `master`.
-3. `softprops/action-gh-release` creates the release tag (`v*`) and uploads
-   the binaries. The `VERSION` file is generated in the runner and uploaded as
-   a release asset.
-4. Only the 3 most recent releases are kept.
+   latest git tag, sed-bumps `Cargo.toml` *locally in the runner*, refreshes
+   `Cargo.lock`, then builds **both macOS targets** — `aarch64-apple-darwin`
+   and `x86_64-apple-darwin` — using `task build TARGET=...`. (Apple Silicon
+   runners cross-compile the x86_64 target.) No commit is pushed back to
+   `master`.
+3. The compiled binary's `--version` output comes from `build.rs`, which
+   reads the `RELEASE_VERSION` env var (set by the workflow from the next
+   tag) and bakes it into the binary via `env!("APP_VERSION")`. So the
+   tag is the source of truth for the released binary's version; the
+   in-runner `Cargo.toml` bump is just to satisfy `--locked`.
+4. `softprops/action-gh-release` creates the release tag (`v*`) and uploads
+   the binaries. A `VERSION` file is also written in the runner and
+   uploaded as a release asset.
+5. Only the 3 most recent releases are kept.
 
 To add more targets (e.g. Linux), extend the `TARGETS` env in the `build` job and
 the `files:` list in the Create Release step. Linux/Windows targets need their own
@@ -50,6 +56,10 @@ relies on a macOS runner.
 ## Conventions
 
 - Version lives in git tags (`v*`), bumped automatically (patch) on release.
-- Dependabot PRs are auto-merged (`.github/workflows/auto-merge.yml`); PRs run
-  `.github/workflows/test.yml`.
+  `build.rs` reads the next tag (or `RELEASE_VERSION`) at compile time and
+  bakes it into the binary.
+- Dependabot is configured in `.github/dependabot.yml` (monthly Cargo +
+  GitHub Actions updates, assigned to `eveenendaal`). PRs run
+  `.github/workflows/test.yml`; there is no auto-merge workflow — merges
+  are reviewed manually.
 - Always run `task test` before committing.

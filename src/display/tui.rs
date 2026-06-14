@@ -134,8 +134,8 @@ impl HistoryView {
         let n = self.logs.len();
         let sum: i64 = self.logs.iter().map(|(_, _, ms)| ms).sum();
         let avg = sum / n as i64;
-        let min = self.logs.iter().map(|(_, _, ms)| *ms).min().unwrap();
-        let max = self.logs.iter().map(|(_, _, ms)| *ms).max().unwrap();
+        let min = self.logs.iter().map(|(_, _, ms)| *ms).min().expect("logs non-empty per is_empty guard above");
+        let max = self.logs.iter().map(|(_, _, ms)| *ms).max().expect("logs non-empty per is_empty guard above");
         // Logs are ordered newest-first; span from oldest to newest divided by (n-1) gaps
         let avg_freq = if n >= 2 {
             let newest = self.logs[0].1;

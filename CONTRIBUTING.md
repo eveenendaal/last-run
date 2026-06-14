@@ -11,8 +11,8 @@ Thank you for your interest in contributing to LastRun!
 
 2. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/LastRun.git
-   cd LastRun
+   git clone https://github.com/eveenendaal/last-run.git
+   cd last-run
    ```
 
 3. Build the project:
@@ -31,6 +31,10 @@ Or using the Taskfile:
 ```bash
 task test
 ```
+
+`task test` is the canonical pre-commit check — please run it before
+pushing. CI (`.github/workflows/test.yml`) runs the same command on every
+pull request.
 
 ## Building
 

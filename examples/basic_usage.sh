@@ -8,11 +8,14 @@ lastrun start --id backup
 echo "Performing backup..."
 sleep 2
 
-# Complete the backup task
-lastrun complete --id backup
+# Mark the task as done (records last-run time + elapsed time)
+lastrun done --id backup
 
-# Check when it was last run
-lastrun list
+# View current status of all tasks (interactive TUI; press q to quit)
+lastrun status
 
-# View logs
+# Or grab a JSON snapshot for scripts
+lastrun status --json
+
+# View execution logs for this task
 lastrun logs --id backup

@@ -53,8 +53,8 @@ pub fn get_task_logs(
 ) -> AppResult<Vec<(String, DateTime<Utc>, i64)>> {
     let mut query = String::from("SELECT id, end_time, elapsed_time FROM task_log");
 
-    if let Some(_) = &task_id {
-        query.push_str(" WHERE id = ?"); // Added filtering by task ID
+    if task_id.is_some() {
+        query.push_str(" WHERE id = ?");
     }
 
     query.push_str(" ORDER BY end_time DESC");
@@ -117,7 +117,7 @@ pub fn get_all_tasks(
 > {
     let mut query = String::from("SELECT id, last_run, start_time, duration FROM tasks");
 
-    if let Some(_) = &task_id {
+    if task_id.is_some() {
         query.push_str(" WHERE id = ?");
     }
 

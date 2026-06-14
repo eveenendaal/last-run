@@ -108,7 +108,6 @@ jobs:
         with:
           name: Release v${{ steps.version.outputs.version }}
           tag_name: v${{ steps.version.outputs.version }}
-          target_commitish: ${{ steps.commit.outputs.sha }}
           files: |
             dist/lastrun-aarch64-apple-darwin
             dist/lastrun-aarch64-apple-darwin.sha256

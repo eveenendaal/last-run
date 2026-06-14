@@ -121,7 +121,7 @@ pub enum Commands {
 
     /// Generate shell completion for your shell
     Completion {
-        /// The shell to generate completions for (bash, zsh, fish, powershell, elvish)
+        /// The shell to generate completions for (zsh)
         #[arg(value_enum)]
         shell: Shell,
     },
