@@ -37,7 +37,7 @@ last-run/
 
 ### `cli.rs`
 clap-derived CLI: `start`, `done`/`update`, `check`, `logs`, `status`,
-`reset`, `delete`, `clear`, `archive`, `completion`. Also home to
+`reset`, `delete`, `clear`, `archive`, `set-retention`, `completion`. Also home to
 `should_run_task()`, the shared "is this task overdue?" logic used by both
 the `check` command and the TUI's status colouring.
 

@@ -167,6 +167,43 @@ fn test_auto_archive_on_done() {
 }
 
 #[test]
+fn test_archive_default_falls_back_when_retention_off() {
+    // Regression: `archive` with no --older-than must not error when retention
+    // is "off". It should fall back to a 30-day cutoff, mirroring main.rs:
+    //   get_log_retention_seconds().unwrap_or(30 days)
+    use lastrun::db::{
+        delete_old_logs, get_log_retention_seconds, get_task_logs, set_log_retention,
+    };
+    use chrono::Duration;
+
+    let conn = Connection::open_in_memory().unwrap();
+    init_db(&conn).unwrap();
+
+    set_log_retention(&conn, "off").unwrap();
+    assert!(get_log_retention_seconds(&conn).unwrap().is_none());
+
+    // Two entries: one older than the 30d default, one within it.
+    let mut task = make_task("archive_off_test");
+    task.insert(&conn).unwrap();
+    task.start_time = Some(Utc::now() - Duration::days(40));
+    task.last_run = Some(Utc::now() - Duration::days(40));
+    task.update(&conn).unwrap();
+    task.start_time = Some(Utc::now() - Duration::days(1));
+    task.last_run = Some(Utc::now() - Duration::days(1));
+    task.update(&conn).unwrap();
+
+    // Resolve the cutoff the way `archive` does when --older-than is omitted.
+    let seconds = get_log_retention_seconds(&conn).unwrap().unwrap_or(30 * 24 * 3600);
+    let cutoff = Utc::now() - Duration::seconds(seconds);
+
+    let deleted = delete_old_logs(&conn, &cutoff, None).unwrap();
+    assert_eq!(deleted, 1);
+
+    let logs = get_task_logs(&conn, Some("archive_off_test".to_string()), 10).unwrap();
+    assert_eq!(logs.len(), 1);
+}
+
+#[test]
 fn test_archive_preserves_recent_logs() {
     use lastrun::db::{delete_old_logs, get_task_logs};
     use chrono::Duration;

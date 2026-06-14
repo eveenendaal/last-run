@@ -347,7 +347,15 @@ impl App {
     }
 
     fn reload_settings(&mut self, conn: &Connection) {
-        self.settings = db::get_all_settings(conn).unwrap_or_default();
+        let mut settings = db::get_all_settings(conn).unwrap_or_default();
+        // Always surface `log_retention` so it can be edited even on a fresh DB
+        // where no setting has been written yet. The DB stays untouched (unset
+        // still means "use the 30d default"); this row is display-only until saved.
+        if !settings.iter().any(|(k, _)| k == "log_retention") {
+            settings.push(("log_retention".to_string(), "30d".to_string()));
+            settings.sort();
+        }
+        self.settings = settings;
     }
 }
 
@@ -469,7 +477,7 @@ fn run_app(
 ) -> AppResult<()> {
     let tasks_raw = db::get_all_tasks(conn, id_filter)?;
     let mut app = App::new(tasks_raw, sort_col);
-    app.settings = db::get_all_settings(conn).unwrap_or_default();
+    app.reload_settings(conn);
     let refresh_interval = StdDuration::from_millis(250);
     let mut last_refresh = Instant::now();
 
@@ -610,10 +618,20 @@ fn run_app(
                     };
                     match key.code {
                         KeyCode::Enter => {
-                            if db::set_setting(conn, &setting_key, &buf).is_ok() {
+                            // Route `log_retention` through the validating setter so a
+                            // typo can't be stored and then silently ignored. On a
+                            // validation error, stay in the editor instead of saving.
+                            let saved = if setting_key == "log_retention" {
+                                db::set_log_retention(conn, buf.trim()).is_ok()
+                            } else {
+                                db::set_setting(conn, &setting_key, &buf).is_ok()
+                            };
+                            if saved {
                                 app.reload_settings(conn);
+                                app.app_state = AppState::Settings;
+                            } else {
+                                app.app_state = AppState::EditSetting(setting_key, buf);
                             }
-                            app.app_state = AppState::Settings;
                         }
                         KeyCode::Esc => {
                             app.app_state = AppState::Settings;
