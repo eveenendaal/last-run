@@ -238,13 +238,20 @@ fn main() -> AppResult<()> {
             }
         }
         Commands::Archive { older_than, id, yes } => {
-            let older_than = older_than.unwrap_or_else(|| {
-                db::get_setting(&conn, "log_retention")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_else(|| "30d".to_string())
-            });
-            let duration = parse_duration(&older_than).map_err(AppError::DurationParse)?;
+            // When no explicit threshold is given, fall back to the stored
+            // retention setting (or 30 days). `get_log_retention_seconds`
+            // returns None for unset/"off"/"0"/invalid, so this never errors.
+            let (older_than, duration) = match older_than {
+                Some(value) => {
+                    let duration = parse_duration(&value).map_err(AppError::DurationParse)?;
+                    (value, duration)
+                }
+                None => {
+                    let seconds = db::get_log_retention_seconds(&conn)?
+                        .unwrap_or(30 * 24 * 3600);
+                    (format!("{}d", seconds / (24 * 3600)), chrono::Duration::seconds(seconds))
+                }
+            };
             let cutoff = Utc::now() - duration;
             let task_id_ref = id.as_deref();
 
@@ -311,18 +318,16 @@ fn main() -> AppResult<()> {
 
         Commands::SetRetention { duration } => {
             let normalized = duration.trim();
-            if normalized.eq_ignore_ascii_case("off") || normalized == "0" {
-                db::set_log_retention(&conn, "off")?;
-                if !cli.quiet {
+            let disabled = normalized.eq_ignore_ascii_case("off") || normalized == "0";
+            // `set_log_retention` owns validation and "off"/"0" normalization.
+            db::set_log_retention(&conn, normalized)?;
+            if !cli.quiet {
+                if disabled {
                     println!(
                         "{}{}Log retention disabled — auto-cleanup turned off.{}",
                         BOLD, GREEN, RESET
                     );
-                }
-            } else {
-                parse_duration(normalized).map_err(AppError::DurationParse)?;
-                db::set_log_retention(&conn, normalized)?;
-                if !cli.quiet {
+                } else {
                     println!(
                         "{}{}Log retention set to {}{}{}. Old logs will be auto-cleaned on each `done`/`update`.{}",
                         BOLD, GREEN, WHITE, normalized, GREEN, RESET
