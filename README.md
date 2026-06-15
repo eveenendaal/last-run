@@ -21,10 +21,6 @@ runtime dependencies):
 Override the path with `--db-path` or the `LASTRUN_DB_PATH` environment
 variable. See `lastrun --help` for details.
 
-> **Migration from 1.x:** Existing databases at `~/.tasks/data.db` are
-> automatically moved to the new location on first run. The old `~/.tasks/`
-> directory is removed if empty. No action is needed.
-
 ## Features
 
 - Record start and completion times for any task by ID
