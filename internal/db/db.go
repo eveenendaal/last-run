@@ -82,13 +82,21 @@ func InitDB(db *sql.DB) error {
 }
 
 // Open opens (or creates) a SQLite database at the given path. The connection
-// pool is capped at one to avoid "database is locked" contention.
+// pool is capped at one to avoid "database is locked" contention from within
+// the same process. A 5-second busy timeout and WAL journal mode handle
+// cross-process contention gracefully.
 func Open(path string) (*sql.DB, error) {
 	database, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	database.SetMaxOpenConns(1)
+	if _, err := database.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		return nil, err
+	}
+	if _, err := database.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		return nil, err
+	}
 	return database, nil
 }
 
