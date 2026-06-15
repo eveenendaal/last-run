@@ -46,8 +46,7 @@ a `PersistentPreRunE` hook and closed afterwards.
 ### `db`
 Resolves the database path (`--db-path` flag → `LASTRUN_DB_PATH` env →
 `${XDG_DATA_HOME}/lastrun/data.db` via `adrg/xdg`), creates the directory on
-demand, and provides typed CRUD helpers over `database/sql`. On first run with
-the default path, data is migrated from the old `~/.tasks/data.db` location. The
+demand, and provides typed CRUD helpers over `database/sql`. The
 connection pool is capped at a single connection to avoid SQLite lock
 contention. Every query uses parameterized bindings.
 

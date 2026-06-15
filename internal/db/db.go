@@ -104,14 +104,9 @@ func Open(path string) (*sql.DB, error) {
 // migrates an old database if applicable, ensures the parent directory exists,
 // and opens the connection.
 func GetFileBasedConnection(dbPathOverride string) (*sql.DB, error) {
-	isDefault := dbPathOverride == ""
 	dbPath, err := resolveDBPath(dbPathOverride)
 	if err != nil {
 		return nil, err
-	}
-
-	if isDefault {
-		_ = maybeMigrateOldData(dbPath)
 	}
 
 	if parent := filepath.Dir(dbPath); parent != "" {
@@ -136,37 +131,6 @@ func defaultDBPath() (string, error) {
 		return "", apperr.ErrDataDirectoryNotFound
 	}
 	return filepath.Join(dataHome, "lastrun", "data.db"), nil
-}
-
-func maybeMigrateOldData(newPath string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	oldPath := filepath.Join(home, ".tasks", "data.db")
-
-	_, oldErr := os.Stat(oldPath)
-	oldExists := oldErr == nil
-	_, newErr := os.Stat(newPath)
-	newExists := newErr == nil
-
-	if oldExists && !newExists {
-		if parent := filepath.Dir(newPath); parent != "" {
-			if err := os.MkdirAll(parent, 0o755); err != nil {
-				return err
-			}
-		}
-		if err := os.Rename(oldPath, newPath); err != nil {
-			return err
-		}
-		_ = os.Remove(filepath.Dir(oldPath))
-	} else if oldExists && newExists {
-		fmt.Fprintf(os.Stderr,
-			"Warning: old database at %s and new database at %s both exist.\n  Using new location. Remove the old file manually:\n  rm %s\n",
-			oldPath, newPath, oldPath)
-	}
-
-	return nil
 }
 
 // GetTaskLogs returns recent log entries, optionally filtered by task ID. A
