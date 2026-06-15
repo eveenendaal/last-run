@@ -23,8 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go Environment
-        uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: 'go.sum'
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Tests
         run: task test
