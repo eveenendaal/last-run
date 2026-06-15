@@ -6,10 +6,9 @@ on:
       - master
     paths:
       - 'Taskfile.yml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'src/**/*.rs'
-      - 'tests/**/*.rs'
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
       - '.github/workflows/*.yml'
       - '.github/actions/**/*.yml'
 
@@ -25,7 +24,6 @@ permissions:
 
 jobs:
   test:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     environment: default
     defaults:
@@ -34,13 +32,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/setup-rust
-        with:
-          cache-key-prefix: 'test-'
+      - name: Setup Go Environment
+        uses: ./.github/actions/setup-go
 
       - name: Test App
         run: task test
@@ -65,46 +59,18 @@ jobs:
           latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -1)
           current=${latest_tag#v}
           if [ -z "$current" ]; then
-            current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+            current=0.0.0
           fi
           IFS='.' read -r major minor patch <<< "$current"
           next="${major}.${minor}.$((patch + 1))"
           echo "version=$next" >> "$GITHUB_OUTPUT"
-          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          sed -i "s/^version = \"$cargo_version\"/version = \"$next\"/" Cargo.toml
-          echo "Bumped Cargo.toml $cargo_version -> $next (tag-based: $current -> $next)"
-
-      - name: Setup Rust Environment
-        uses: ./.github/actions/setup-rust
-        with:
-          cache-key-prefix: 'version-'
-
-      - name: Update Cargo.lock
-        run: cargo update --workspace
-
-      - name: Upload patched manifests
-        uses: actions/upload-artifact@v5
-        with:
-          name: patched-manifests
-          path: |
-            Cargo.toml
-            Cargo.lock
+          echo "Next version: $next (from tag: ${latest_tag:-none})"
 
   build:
     needs: version
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            targets: "aarch64-apple-darwin x86_64-apple-darwin"
-            artifact-name: macos-binaries
-          - os: ubuntu-latest
-            targets: "x86_64-unknown-linux-gnu"
-            artifact-name: linux-binaries
+    runs-on: ubuntu-latest
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
-      TARGETS: ${{ matrix.targets }}
     defaults:
       run:
         shell: bash
@@ -112,30 +78,33 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download patched manifests
-        uses: actions/download-artifact@v6
+      - name: Setup Go Environment
+        uses: ./.github/actions/setup-go
         with:
-          name: patched-manifests
+          include-task: 'false'
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/setup-rust
-        with:
-          cache-key-prefix: 'release-${{ matrix.os }}-'
-
-      - name: Build
+      - name: Cross-compile all targets
         run: |
           mkdir -p dist
-          for target in $TARGETS; do
-            rustup target add "$target"
-            cargo build --release --locked --target "$target"
-            cp "target/$target/release/lastrun" "dist/lastrun-$target"
-            (cd dist && shasum -a 256 "lastrun-$target" > "lastrun-$target.sha256")
+          # Pure-Go SQLite (modernc.org/sqlite) means every target builds from
+          # this single Linux runner with CGO disabled.
+          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+          for target in $targets; do
+            os=${target%/*}
+            arch=${target#*/}
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            name="lastrun-$os-$arch$ext"
+            echo "Building $name"
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 \
+              go build -ldflags "-s -w -X main.version=$RELEASE_VERSION" -o "dist/$name" .
+            (cd dist && sha256sum "$name" > "$name.sha256")
           done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.artifact-name }}
+          name: binaries
           path: dist/
 
   create-release:
@@ -146,11 +115,14 @@ jobs:
         shell: bash
 
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v6
+        with:
+          name: binaries
+          path: dist
 
       - name: Write VERSION file
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.version.outputs.version }}" > dist/VERSION
 
       - name: Create Release
         uses: softprops/action-gh-release@v3
@@ -158,9 +130,7 @@ jobs:
           name: Release v${{ needs.version.outputs.version }}
           tag_name: v${{ needs.version.outputs.version }}
           files: |
-            macos-binaries/*
-            linux-binaries/*
-            VERSION
+            dist/*
 
       - name: Remove old releases
         uses: actions/github-script@v9

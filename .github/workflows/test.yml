@@ -6,10 +6,9 @@ on:
       - 'master'
     paths:
       - 'Taskfile.yml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'src/**/*.rs'
-      - 'tests/**/*.rs'
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
       - '.github/workflows/*.yml'
       - '.github/actions/**/*.yml'
 
@@ -20,12 +19,12 @@ jobs:
     defaults:
       run:
         shell: bash
-    
+
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/setup-rust
+      - name: Setup Go Environment
+        uses: ./.github/actions/setup-go
 
       - name: Run Tests
         run: task test

@@ -1,35 +1,43 @@
 version: '3'
 
+vars:
+  # Release version: RELEASE_VERSION env wins, else the latest git tag, else "dev".
+  VERSION:
+    sh: echo "${RELEASE_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo dev)}"
+  LDFLAGS: -s -w -X main.version={{.VERSION}}
+  SHA:
+    sh: '[ "$(uname)" = "Darwin" ] && echo "shasum -a 256" || echo "sha256sum"'
+  EXT: '{{if eq OS "windows"}}.exe{{end}}'
+
 tasks:
   clean:
-    desc: Clean the output directory
+    desc: Remove build output
     cmds:
-      - cargo clean
+      - rm -rf dist
+
   test:
     desc: Run tests
     cmds:
-      - cargo test --locked
+      - go test ./...
+
   build:
-    desc: Build LastRun (optionally for a specific target, e.g. TARGET=x86_64-apple-darwin)
+    desc: Build LastRun (cross-compile with GOOS/GOARCH, e.g. GOOS=windows GOARCH=amd64 task build)
     cmds:
-      - |
-        if [ -n "{{.TARGET}}" ]; then
-          rustup target add {{.TARGET}}
-          cargo build --release --locked --target {{.TARGET}}
-          cd target/{{.TARGET}}/release && shasum -a 256 lastrun > lastrun.sha256
-        else
-          cargo build --release --locked
-          cd target/release && shasum -a 256 lastrun > lastrun.sha256
-        fi
+      - mkdir -p dist
+      - CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -o dist/lastrun{{.EXT}} .
+      - cd dist && {{.SHA}} lastrun{{.EXT}} > lastrun.sha256
+
   install:
-    desc: Build and install lastrun to ~/.cargo/bin
+    desc: Build and install lastrun to your Go bin
     cmds:
-      - cargo install --path . --locked
+      - go install -ldflags "{{.LDFLAGS}}" .
+
   status:
     desc: Run the LastRun status TUI
     cmds:
-      - cargo run --release -- status
+      - go run . status
+
   help:
     desc: Run the LastRun help
     cmds:
-      - cargo run --release -- help
+      - go run . help

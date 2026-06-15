@@ -10,12 +10,13 @@ duration thresholds, and an interactive TUI status view.
 LastRun is built for cron jobs, scheduled scripts, and any recurring
 operation where you want to know *when* it last finished and *whether* it's
 due to run again. State is kept in a single SQLite file at a
-platform-appropriate location (SQLite is statically linked, so the binary
-has no runtime dependencies):
+platform-appropriate location (SQLite is compiled in via the pure-Go
+`modernc.org/sqlite` driver, so the binary is statically linked with no
+runtime dependencies):
 
 - **macOS:** `~/Library/Application Support/lastrun/data.db`
 - **Linux:** `~/.local/share/lastrun/data.db`
-- **Windows:** `%APPDATA%\lastrun\data.db`
+- **Windows:** `%LOCALAPPDATA%\lastrun\data.db`
 
 Override the path with `--db-path` or the `LASTRUN_DB_PATH` environment
 variable. See `lastrun --help` for details.
@@ -34,7 +35,7 @@ variable. See `lastrun --help` for details.
 - `--json` snapshot for scripts and dashboards
 - Configurable log retention with automatic cleanup on every `done`/`update`
 - Log archival with confirmation prompt
-- Zsh tab completion
+- Shell tab completion (bash, zsh, fish, powershell)
 - `--quiet` flag for non-interactive use
 
 ## Installation
@@ -45,25 +46,29 @@ Download a release from the
 [GitHub releases page](https://github.com/eveenendaal/last-run/releases).
 Builds are published for:
 
-- `aarch64-apple-darwin` (Apple Silicon Mac)
-- `x86_64-apple-darwin` (Intel Mac)
-- `x86_64-unknown-linux-gnu` (Linux)
+- `lastrun-darwin-arm64` (Apple Silicon Mac)
+- `lastrun-darwin-amd64` (Intel Mac)
+- `lastrun-linux-amd64` (Linux x86-64)
+- `lastrun-linux-arm64` (Linux ARM64)
+- `lastrun-windows-amd64.exe` (Windows x86-64)
 
 Each binary includes a matching `.sha256` checksum file.
 
 ### From source
 
+Requires Go (see `go.mod` for the version).
+
 ```bash
 git clone https://github.com/eveenendaal/last-run.git
 cd last-run
-cargo build --release
-cp target/release/lastrun /usr/local/bin/
+go build -o lastrun .
+cp lastrun /usr/local/bin/
 ```
 
 Or, with [Task](https://taskfile.dev):
 
 ```bash
-task install     # cargo install --path . --locked
+task install     # go install .
 ```
 
 ## Quick start
@@ -124,16 +129,17 @@ lastrun status
 
 Keybindings inside the TUI:
 
-| Key            | Action                                       |
-|----------------|----------------------------------------------|
-| `↑` / `↓`      | Move selection                               |
-| `PgUp` / `PgDn`| Page through the task list                   |
-| `<` / `>`      | Cycle sort column                            |
-| `s`            | Toggle ascending / descending sort           |
-| `Enter`        | Drill into per-task history                  |
-| `d`            | Delete the selected task (asks to confirm)   |
-| `?`            | Toggle the help overlay                      |
-| `q`            | Quit                                         |
+| Key                | Action                                       |
+|--------------------|----------------------------------------------|
+| `↑` / `↓` (`k`/`j`) | Move selection                               |
+| `PgUp` / `PgDn`    | Page through the task list                   |
+| `←` / `→` / `Tab`  | Cycle sort column                            |
+| `s`                | Toggle ascending / descending sort           |
+| `Enter` / `h`      | Drill into per-task history                  |
+| `d`                | Delete the selected task (asks to confirm)   |
+| `r`                | Refresh now                                  |
+| `?`                | Toggle the help overlay                      |
+| `q` / `Esc`        | Quit                                         |
 
 For scripts and dashboards, use `--json`:
 
@@ -224,13 +230,14 @@ Drop and recreate the `tasks` table — wipes every task but keeps the
 
 ### `completion`
 
-Print a zsh completion script:
+Print a shell completion script (bash, zsh, fish, or powershell):
 
 ```bash
 echo 'source <(lastrun completion zsh)' >> ~/.zshrc
+lastrun completion bash > /etc/bash_completion.d/lastrun
 ```
 
-(Bash, fish, etc. are not currently wired up.)
+Run `lastrun completion --help` for per-shell setup instructions.
 
 ### Quiet mode
 
@@ -254,16 +261,16 @@ See the [`examples/`](examples/) directory:
 
 ## Development
 
-The project uses [Task](https://taskfile.dev) to wrap the common Cargo
+The project uses [Task](https://taskfile.dev) to wrap the common Go
 invocations:
 
 ```bash
-task test                    # cargo test --locked
-task build                   # release build + SHA256 (native target)
-task build TARGET=<triple>   # release build for a specific target triple
-task install                 # cargo install --path . --locked
-task status                  # run the status TUI against your local DB
-task clean                   # cargo clean
+task test                          # go test ./...
+task build                         # build dist/lastrun + SHA256 (native target)
+GOOS=windows GOARCH=amd64 task build  # cross-compile for a specific target
+task install                       # go install .
+task status                        # run the status TUI against your local DB
+task clean                         # remove dist/
 ```
 
 Run `task test` before committing — that's what CI runs on every PR.
@@ -272,25 +279,22 @@ Run `task test` before committing — that's what CI runs on every PR.
 
 ```
 last-run/
-├── src/
-│   ├── main.rs          # Command dispatch
-│   ├── lib.rs           # Library root + APP_VERSION
-│   ├── cli.rs           # clap definitions, should_run_task()
-│   ├── db.rs            # SQLite connection, schema, CRUD
-│   ├── model.rs         # Task struct + persistence
-│   ├── error.rs         # thiserror-based error type
-│   ├── format.rs        # Duration parsing/formatting
-│   └── display/
-│       ├── mod.rs       # Re-exports + ANSI colour constants
-│       ├── json.rs      # JSON status output
-│       ├── table.rs     # prettytable log output
-│       └── tui.rs       # ratatui interactive status view
-├── tests/               # Unit + integration tests
-├── examples/            # Example shell scripts
-├── docs/                # Architecture notes
-├── build.rs             # Injects APP_VERSION from git tag / RELEASE_VERSION
-├── Taskfile.yml         # Task runner definitions
-└── Cargo.toml
+├── main.go                  # Entry point: cobra tree, run via fang
+├── internal/
+│   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
+│   ├── db/                  # SQLite connection, schema, CRUD
+│   ├── model/               # Task struct + persistence
+│   ├── format/              # Duration parsing/formatting, RFC3339 helpers
+│   ├── apperr/              # Error types
+│   ├── display/             # JSON status, log table, ANSI colours
+│   ├── tui/                 # Bubble Tea interactive status view
+│   ├── settings/            # Bubble Tea interactive settings editor
+│   ├── tuiutil/             # Shared TUI panels/overlays
+│   └── version/             # Release version-bump helper
+├── examples/                # Example shell scripts
+├── docs/                    # Architecture notes
+├── Taskfile.yml             # Task runner definitions
+└── go.mod / go.sum
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a deeper architecture
