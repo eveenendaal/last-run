@@ -4,10 +4,8 @@ Thank you for your interest in contributing to LastRun!
 
 ## Development Setup
 
-1. Install Rust (if not already installed):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
+1. Install Go (see [`go.mod`](go.mod) for the required version) from
+   <https://go.dev/dl/>.
 
 2. Clone the repository:
    ```bash
@@ -17,14 +15,14 @@ Thank you for your interest in contributing to LastRun!
 
 3. Build the project:
    ```bash
-   cargo build
+   go build ./...
    ```
 
 ## Running Tests
 
 Run the test suite:
 ```bash
-cargo test
+go test ./...
 ```
 
 Or using the Taskfile:
@@ -38,19 +36,21 @@ pull request.
 
 ## Building
 
-Build the release version:
-```bash
-cargo build --release
-```
-
-Or using the Taskfile:
+Build a release binary:
 ```bash
 task build
 ```
 
+This produces `dist/lastrun` plus a matching `.sha256`. Cross-compile for
+another platform with `GOOS`/`GOARCH`, e.g.:
+```bash
+GOOS=windows GOARCH=amd64 task build
+```
+
 ## Code Style
 
-This project follows standard Rust conventions. Run `cargo fmt` to format your code and `cargo clippy` to check for common issues.
+This project follows standard Go conventions. Run `gofmt -w .` to format your
+code and `go vet ./...` to check for common issues.
 
 ## Submitting Changes
 

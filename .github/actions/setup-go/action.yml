@@ -1,0 +1,25 @@
+name: 'Setup Go Environment'
+description: 'Common setup steps for Go projects: Go toolchain, module/build caching, and the Task runner'
+inputs:
+  include-task:
+    description: 'Whether to install the Task runner'
+    required: false
+    default: 'true'
+  cache-key-prefix:
+    description: 'Additional prefix for the build cache key to separate different job types'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+        cache-dependency-path: 'go.sum'
+
+    - name: Install Tools
+      if: inputs.include-task == 'true'
+      uses: eveenendaal/github-actions/actions/install-my-tools@master
+      with:
+        include: task
