@@ -20,11 +20,12 @@ task clean                      # remove dist/
 ```
 
 Source lives in `main.go` plus `internal/` packages: `cli` (cobra commands +
-`ShouldRunTask`), `db` (SQLite schema + CRUD), `model` (`Task` persistence),
-`format` (duration/time helpers), `apperr` (errors), `display` (JSON + log
-table + ANSI colors), `tui` (Bubble Tea status view), `settings` (Bubble Tea
-settings editor), `tuiutil` (shared TUI panels/overlays), and `version` (release
-bump helper). Architecture notes in `docs/ARCHITECTURE.md`.
+`ShouldRunTask`), `config` (per-user JSON config file), `db` (SQLite schema +
+CRUD), `model` (`Task` persistence), `format` (duration/time helpers), `apperr`
+(errors), `display` (JSON + log table + ANSI colors), `tui` (Bubble Tea status
+view), `settings` (Bubble Tea settings editor with db location, import/export),
+`tuiutil` (shared TUI panels/overlays), and `version` (release bump helper).
+Architecture notes in `docs/ARCHITECTURE.md`.
 
 ### Pure-Go SQLite (no cgo)
 The `modernc.org/sqlite` driver is a cgo-free, pure-Go SQLite. Binaries are
