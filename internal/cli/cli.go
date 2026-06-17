@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,8 +27,9 @@ var Version = "dev"
 // appContext carries the shared database handle and global flags through the
 // command handlers.
 type appContext struct {
-	db    *sql.DB
-	quiet bool
+	db     *sql.DB
+	dbPath string
+	quiet  bool
 }
 
 // ShouldRunTask reports whether a task is due and a human-readable explanation,
@@ -61,7 +63,16 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			conn, err := db.GetFileBasedConnection(dbPath)
+			resolvedPath, err := db.ResolveDBPath(dbPath)
+			if err != nil {
+				return err
+			}
+			if parent := filepath.Dir(resolvedPath); parent != "" {
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					return err
+				}
+			}
+			conn, err := db.Open(resolvedPath)
 			if err != nil {
 				return err
 			}
@@ -69,6 +80,7 @@ func NewRootCmd() *cobra.Command {
 				return err
 			}
 			ctx.db = conn
+			ctx.dbPath = resolvedPath
 			ctx.quiet = quiet
 			return nil
 		},
@@ -517,10 +529,10 @@ func newResetCmd(ctx *appContext) *cobra.Command {
 func newSettingsCmd(ctx *appContext) *cobra.Command {
 	return &cobra.Command{
 		Use:     "settings",
-		Short:   "Interactively view and edit settings (e.g. log retention)",
+		Short:   "Interactively view and edit settings (e.g. log retention, DB location)",
 		GroupID: "config",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return settings.RunSettingsTUI(ctx.db)
+			return settings.RunSettingsTUI(ctx.db, ctx.dbPath)
 		},
 	}
 }

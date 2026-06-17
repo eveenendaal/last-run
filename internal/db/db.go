@@ -13,6 +13,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/eveenendaal/last-run/internal/apperr"
+	"github.com/eveenendaal/last-run/internal/config"
 	"github.com/eveenendaal/last-run/internal/format"
 
 	_ "modernc.org/sqlite"
@@ -101,10 +102,9 @@ func Open(path string) (*sql.DB, error) {
 }
 
 // GetFileBasedConnection resolves the database path (honoring an override),
-// migrates an old database if applicable, ensures the parent directory exists,
-// and opens the connection.
+// ensures the parent directory exists, and opens the connection.
 func GetFileBasedConnection(dbPathOverride string) (*sql.DB, error) {
-	dbPath, err := resolveDBPath(dbPathOverride)
+	dbPath, err := ResolveDBPath(dbPathOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -118,9 +118,20 @@ func GetFileBasedConnection(dbPathOverride string) (*sql.DB, error) {
 	return Open(dbPath)
 }
 
-func resolveDBPath(override string) (string, error) {
+// ResolveDBPath returns the database path to use, following this priority:
+// 1. override (CLI flag / LASTRUN_DB_PATH env var)
+// 2. db_path from $XDG_CONFIG_HOME/lastrun/config.json
+// 3. XDG data-home default (~/.local/share/lastrun/data.db on Linux)
+func ResolveDBPath(override string) (string, error) {
 	if override != "" {
 		return override, nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	if cfg.DBPath != "" {
+		return cfg.DBPath, nil
 	}
 	return defaultDBPath()
 }
@@ -131,6 +142,45 @@ func defaultDBPath() (string, error) {
 		return "", apperr.ErrDataDirectoryNotFound
 	}
 	return filepath.Join(dataHome, "lastrun", "data.db"), nil
+}
+
+// CopyDatabase copies the currently-open srcDB to dstPath using SQLite's
+// VACUUM INTO, which creates a clean, defragmented copy. The destination
+// directory is created if needed. Returns an error if dstPath already exists;
+// remove the file first if you need to overwrite.
+func CopyDatabase(srcDB *sql.DB, dstPath string) error {
+	if parent := filepath.Dir(dstPath); parent != "" {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(dstPath); err == nil {
+		return fmt.Errorf("destination already exists: %s", dstPath)
+	}
+	_, err := srcDB.Exec("VACUUM INTO ?", dstPath)
+	return err
+}
+
+// GetCustomDBPath returns the db_path stored in the user config file, or an
+// empty string when no custom path has been set.
+func GetCustomDBPath() (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	return cfg.DBPath, nil
+}
+
+// SetCustomDBPath writes path to the user config file as the preferred DB
+// location. Pass an empty string to clear the override and revert to the
+// XDG-based default.
+func SetCustomDBPath(path string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg.DBPath = path
+	return config.Save(cfg)
 }
 
 // GetTaskLogs returns recent log entries, optionally filtered by task ID. A
