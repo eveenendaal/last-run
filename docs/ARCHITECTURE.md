@@ -16,6 +16,7 @@ last-run/
 ├── main.go                  # Entry point: wires cobra tree, runs via fang
 ├── internal/
 │   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
+│   ├── config/              # Per-user JSON config ($XDG_CONFIG_HOME/lastrun/config.json)
 │   ├── db/                  # Connection, schema, typed CRUD helpers
 │   ├── model/               # Task struct + persistence
 │   ├── format/              # Duration parse/format, RFC3339 helpers
@@ -43,12 +44,22 @@ which is rendered with styling by [`charmbracelet/fang`](https://github.com/char
 by both `check` and the TUI's status colouring. The database handle is opened in
 a `PersistentPreRunE` hook and closed afterwards.
 
+### `config`
+Loads and saves `$XDG_CONFIG_HOME/lastrun/config.json`, a small JSON file that
+stores settings which must be resolved before the database is opened — currently
+only `db_path`. A missing file is treated as an empty config, so first-run
+behaviour is unchanged and no config file is created unless the user explicitly
+changes the database location.
+
 ### `db`
-Resolves the database path (`--db-path` flag → `LASTRUN_DB_PATH` env →
-`${XDG_DATA_HOME}/lastrun/data.db` via `adrg/xdg`), creates the directory on
-demand, and provides typed CRUD helpers over `database/sql`. The
-connection pool is capped at a single connection to avoid SQLite lock
-contention. Every query uses parameterized bindings.
+Resolves the database path following the priority chain: `--db-path` flag /
+`LASTRUN_DB_PATH` env → `$XDG_CONFIG_HOME/lastrun/config.json` (via the
+`config` package) → `${XDG_DATA_HOME}/lastrun/data.db` (XDG default). Creates
+the parent directory on demand and provides typed CRUD helpers over
+`database/sql`. The connection pool is capped at a single connection to avoid
+SQLite lock contention. Every query uses parameterized bindings. Also exposes
+`CopyDatabase`, which uses SQLite's `VACUUM INTO` to snapshot the live database
+to a new path without closing it.
 
 ### `model`
 `Task` is the in-memory representation of a row from the `tasks` table.
@@ -80,9 +91,13 @@ and [Lip Gloss](https://github.com/charmbracelet/lipgloss):
 - `tui` — The `lastrun status` view: sortable task table, per-task history
   drill-down with stats, delete-confirmation popups, and a `?` help overlay.
   It refreshes every 250 ms so elapsed counters tick live.
-- `settings` — The `lastrun settings` editor for viewing/editing key-value
-  settings (currently `log_retention`), routing saves through the validating
-  setter.
+- `settings` — The `lastrun settings` editor: cursor-navigable list of settings
+  (currently `db_location` and `log_retention`). Editing `db_location` triggers
+  a choice overlay whose options adapt to whether the target path exists:
+  **[M] Migrate** (VACUUM INTO), **[N] New empty DB**, or **[S] Switch** to an
+  existing file. Press `e` to export the live database to any path, or `i` to
+  import (switch to) an existing file. All location changes take effect on the
+  next restart.
 - `tuiutil` — Shared rendering primitives: titled rounded panels, the bottom
   controls bar, the help modal, and a centered overlay compositor.
 
@@ -114,6 +129,10 @@ CREATE TABLE settings (
 The `settings` table is a generic key-value store; the only key currently in use
 is `log_retention` (a duration string like `30d`, or `off` to disable cleanup).
 
+Settings that must be known before the database is opened — currently only
+`db_path` — are stored in a separate config file at
+`$XDG_CONFIG_HOME/lastrun/config.json` rather than in the `settings` table.
+
 Schema migrations are intentionally minimal: `InitDB()` runs the
 `CREATE TABLE IF NOT EXISTS` statements, then attempts a best-effort
 `ALTER TABLE tasks ADD COLUMN duration INTEGER`, ignoring the error if the
@@ -124,7 +143,7 @@ used, so existing databases work unchanged.
 ## Data flow
 
 1. `main.go` builds the cobra tree and executes it through `fang`.
-2. `PersistentPreRunE` opens the DB and runs `InitDB()`.
+2. `PersistentPreRunE` calls `db.ResolveDBPath` (flag → config file → XDG default), creates the parent directory if needed, opens the DB, and runs `InitDB()`.
 3. The matched command calls into `model` (typed task ops) or `db` (bulk reads,
    archival, deletions).
 4. After every `done`/`update`, `autoArchive()` reads the `log_retention` setting

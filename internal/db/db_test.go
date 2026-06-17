@@ -1,6 +1,8 @@
 package db_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -268,5 +270,102 @@ func TestLogRetentionSeconds(t *testing.T) {
 	}
 	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
 		t.Error("expected invalid retention to return ok=false")
+	}
+}
+
+func TestCopyDatabase(t *testing.T) {
+	src := newTestDB(t)
+	if err := makeTask("original_task").Insert(src); err != nil {
+		t.Fatal(err)
+	}
+
+	dstPath := filepath.Join(t.TempDir(), "copy.db")
+	if err := db.CopyDatabase(src, dstPath); err != nil {
+		t.Fatalf("CopyDatabase: %v", err)
+	}
+
+	dst, err := db.Open(dstPath)
+	if err != nil {
+		t.Fatalf("open copy: %v", err)
+	}
+	defer dst.Close()
+	if err := db.InitDB(dst); err != nil {
+		t.Fatal(err)
+	}
+
+	tasks, err := db.GetAllTasks(dst, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "original_task" {
+		t.Errorf("copy tasks = %+v, want [original_task]", tasks)
+	}
+}
+
+func TestCopyDatabaseFailsIfExists(t *testing.T) {
+	src := newTestDB(t)
+	dstPath := filepath.Join(t.TempDir(), "existing.db")
+	// Pre-create destination file.
+	if err := os.WriteFile(dstPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CopyDatabase(src, dstPath); err == nil {
+		t.Error("expected error when destination already exists")
+	}
+}
+
+func TestSetGetCustomDBPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if path, err := db.GetCustomDBPath(); err != nil || path != "" {
+		t.Errorf("initial GetCustomDBPath = (%q, %v), want (\"\", nil)", path, err)
+	}
+
+	want := "/custom/data.db"
+	if err := db.SetCustomDBPath(want); err != nil {
+		t.Fatalf("SetCustomDBPath: %v", err)
+	}
+	if got, _ := db.GetCustomDBPath(); got != want {
+		t.Errorf("GetCustomDBPath = %q, want %q", got, want)
+	}
+
+	// Clear to revert to default.
+	if err := db.SetCustomDBPath(""); err != nil {
+		t.Fatalf("SetCustomDBPath clear: %v", err)
+	}
+	if got, _ := db.GetCustomDBPath(); got != "" {
+		t.Errorf("after clear GetCustomDBPath = %q, want \"\"", got)
+	}
+}
+
+func TestResolveDBPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir()) // ensures XDG_DATA_HOME resolves cleanly
+
+	// Override takes priority.
+	got, err := db.ResolveDBPath("/explicit/path.db")
+	if err != nil || got != "/explicit/path.db" {
+		t.Errorf("override: got (%q, %v), want (/explicit/path.db, nil)", got, err)
+	}
+
+	// Config file takes priority over XDG default when set.
+	if err := db.SetCustomDBPath("/from/config.db"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = db.ResolveDBPath("")
+	if err != nil || got != "/from/config.db" {
+		t.Errorf("config: got (%q, %v), want (/from/config.db, nil)", got, err)
+	}
+
+	// Clear config → falls back to XDG default.
+	if err := db.SetCustomDBPath(""); err != nil {
+		t.Fatal(err)
+	}
+	got, err = db.ResolveDBPath("")
+	if err != nil {
+		t.Fatalf("xdg default: %v", err)
+	}
+	if got == "" || got == "/from/config.db" {
+		t.Errorf("xdg default: unexpected path %q", got)
 	}
 }
