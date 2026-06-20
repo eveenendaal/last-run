@@ -5,7 +5,7 @@ on:
     branches:
       - 'master'
     paths:
-      - 'Taskfile.yml'
+      - 'Makefile'
       - 'go.mod'
       - 'go.sum'
       - '**/*.go'
@@ -29,14 +29,8 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: 'go.sum'
 
-      - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run Tests
-        run: task test
+        run: make test
 
       - name: Build App
-        run: task build
+        run: make build
