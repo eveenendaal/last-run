@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: 'go.sum'
 
       - name: Install tools
-        run: sudo apt-get install -y task
+        run: sh -c "$(curl -ssL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
       - name: Test App
         run: task test
