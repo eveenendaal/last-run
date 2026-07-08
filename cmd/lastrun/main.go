@@ -1,6 +1,3 @@
-// Command lastrun tracks when tasks were last run — start/complete times,
-// history, duration thresholds, and an interactive status TUI. State is kept in
-// a single SQLite database.
 package main
 
 import (

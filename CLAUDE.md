@@ -19,7 +19,7 @@ task help                       # styled help output
 task clean                      # remove dist/
 ```
 
-Source lives in `main.go` plus `internal/` packages: `cli` (cobra commands +
+Source lives in `cmd/lastrun/main.go` (with a thin compatibility `main.go` at the repository root) plus `internal/` packages: `cli` (cobra commands +
 `ShouldRunTask`), `config` (per-user JSON config file), `db` (SQLite schema +
 CRUD), `model` (`Task` persistence), `format` (duration/time helpers), `apperr`
 (errors), `display` (JSON + log table + ANSI colors), `tui` (Bubble Tea status

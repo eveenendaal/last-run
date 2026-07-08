@@ -57,7 +57,7 @@ Requires Go (see `go.mod` for the version).
 ```bash
 git clone https://github.com/eveenendaal/last-run.git
 cd last-run
-go build -o lastrun .
+go build -o lastrun ./cmd/lastrun
 cp lastrun /usr/local/bin/
 ```
 
@@ -275,7 +275,10 @@ Run `task test` before committing — that's what CI runs on every PR.
 
 ```
 last-run/
-├── main.go                  # Entry point: cobra tree, run via fang
+├── cmd/
+│   └── lastrun/
+│       └── main.go          # CLI entry point: wires cobra tree, runs via fang
+├── main.go                  # Thin compatibility wrapper for the repo-root build
 ├── internal/
 │   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
 │   ├── db/                  # SQLite connection, schema, CRUD
