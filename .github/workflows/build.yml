@@ -101,7 +101,7 @@ jobs:
             name="lastrun-$os-$arch$ext"
             echo "Building $name"
             GOOS=$os GOARCH=$arch CGO_ENABLED=0 \
-              go build -ldflags "-s -w -X main.version=$RELEASE_VERSION" -o "dist/$name" .
+              go build -ldflags "-s -w -X main.version=$RELEASE_VERSION" -o "dist/$name" ./cmd/lastrun
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
 

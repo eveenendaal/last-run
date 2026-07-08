@@ -13,7 +13,10 @@ single Linux runner.
 
 ```
 last-run/
-├── main.go                  # Entry point: wires cobra tree, runs via fang
+├── cmd/
+│   └── lastrun/
+│       └── main.go          # CLI entry point: wires cobra tree, runs via fang
+├── main.go                  # Thin compatibility wrapper for repo-root builds
 ├── internal/
 │   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
 │   ├── config/              # Per-user JSON config ($XDG_CONFIG_HOME/lastrun/config.json)
@@ -142,7 +145,9 @@ used, so existing databases work unchanged.
 
 ## Data flow
 
-1. `main.go` builds the cobra tree and executes it through `fang`.
+1. `cmd/lastrun/main.go` builds the cobra tree and executes it through `fang`.
+   The repo-root `main.go` is a thin compatibility wrapper so existing `go build .`
+   workflows keep working.
 2. `PersistentPreRunE` calls `db.ResolveDBPath` (flag → config file → XDG default), creates the parent directory if needed, opens the DB, and runs `InitDB()`.
 3. The matched command calls into `model` (typed task ops) or `db` (bulk reads,
    archival, deletions).

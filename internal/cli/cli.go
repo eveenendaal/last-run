@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/fang"
 	"github.com/eveenendaal/last-run/internal/apperr"
 	"github.com/eveenendaal/last-run/internal/db"
 	"github.com/eveenendaal/last-run/internal/display"
@@ -23,6 +25,13 @@ import (
 
 // Version is the release version, injected from main via ldflags.
 var Version = "dev"
+
+// Execute wires the cobra command tree to the CLI entrypoint.
+func Execute(version string) error {
+	Version = version
+	root := NewRootCmd()
+	return fang.Execute(context.Background(), root, fang.WithVersion(version))
+}
 
 // appContext carries the shared database handle and global flags through the
 // command handlers.
