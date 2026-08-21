@@ -28,5 +28,3 @@ func newTestDB(t *testing.T) *sql.DB {
 func makeTask(id string) *model.Task {
 	return &model.Task{ID: id}
 }
-
-func ptr(s string) *string { return &s }

@@ -306,10 +306,7 @@ func (m *model) View() string {
 
 	shortcuts := basicShortcuts(m.state)
 	ctrlH := tuiutil.ControlsHeight(m.width, shortcuts)
-	mainH := m.height - ctrlH
-	if mainH < 3 {
-		mainH = 3
-	}
+	mainH := max(m.height-ctrlH, 3)
 
 	base := m.renderTable(mainH) + "\n" + tuiutil.RenderControls(m.width, shortcuts)
 
@@ -366,14 +363,8 @@ func (m *model) renderChoiceBox() string {
 
 func (m *model) renderTable(mainH int) string {
 	innerW := m.width - 2
-	keyW := innerW / 3
-	if keyW < 10 {
-		keyW = 10
-	}
-	valW := innerW - keyW - 1
-	if valW < 5 {
-		valW = 5
-	}
+	keyW := max(innerW/3, 10)
+	valW := max(innerW-keyW-1, 5)
 
 	hStyle := lipgloss.NewStyle().Foreground(colDarkGray).Bold(true)
 	header := hStyle.Render(tuiutil.Fit("Key", keyW)) + " " + hStyle.Render(tuiutil.Fit("Value", valW))

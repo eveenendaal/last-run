@@ -33,10 +33,7 @@ func (m *model) View() string {
 	}
 
 	ctrlH := tuiutil.ControlsHeight(m.width, shortcuts)
-	mainH := m.height - ctrlH
-	if mainH < 3 {
-		mainH = 3
-	}
+	mainH := max(m.height-ctrlH, 3)
 
 	var mainView string
 	if m.state == stateHistory {
@@ -64,19 +61,13 @@ func (m *model) View() string {
 
 func (m *model) renderTable(mainH int, now time.Time) string {
 	innerW := m.width - 2
-	m.pageSize = mainH - 4
-	if m.pageSize < 1 {
-		m.pageSize = 1
-	}
+	m.pageSize = max(mainH-4, 1)
 
 	statusW, durW, elapW, lastW := 10, 12, 12, 12
 	if m.width < 60 {
 		statusW, durW, elapW, lastW = 8, 7, 7, 7
 	}
-	taskW := innerW - 2 - (statusW + durW + elapW + lastW) - 4
-	if taskW < 5 {
-		taskW = 5
-	}
+	taskW := max(innerW-2-(statusW+durW+elapW+lastW)-4, 5)
 
 	headerCell := func(label string, col SortCol, w int) string {
 		text := label
@@ -164,10 +155,7 @@ func lastRunCell(t taskRow, now time.Time) string {
 
 func (m *model) renderHistory(mainH int, now time.Time) string {
 	innerW := m.width - 2
-	m.historyPageSize = mainH - 5
-	if m.historyPageSize < 1 {
-		m.historyPageSize = 1
-	}
+	m.historyPageSize = max(mainH-5, 1)
 
 	// Stats line.
 	var statsLine string
@@ -190,10 +178,7 @@ func (m *model) renderHistory(mainH int, now time.Time) string {
 	}
 
 	idxW, atW, durW := 4, 21, 12
-	agoW := innerW - 2 - (idxW + atW + durW) - 3
-	if agoW < 5 {
-		agoW = 5
-	}
+	agoW := max(innerW-2-(idxW+atW+durW)-3, 5)
 
 	hStyle := lipgloss.NewStyle().Foreground(colDarkGray).Bold(true)
 	header := "  " + strings.Join([]string{

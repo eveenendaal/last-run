@@ -98,7 +98,7 @@ func TestGetTaskLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	logs, err := db.GetTaskLogs(database, ptr("task1"), 10)
+	logs, err := db.GetTaskLogs(database, new("task1"), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,8 +159,8 @@ func TestDeleteCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tasksBefore, _ := db.GetAllTasks(database, ptr("delete_test"))
-	logsBefore, _ := db.GetTaskLogs(database, ptr("delete_test"), 10)
+	tasksBefore, _ := db.GetAllTasks(database, new("delete_test"))
+	logsBefore, _ := db.GetTaskLogs(database, new("delete_test"), 10)
 	if len(tasksBefore) != 1 || len(logsBefore) != 1 {
 		t.Fatalf("before: tasks=%d logs=%d, want 1/1", len(tasksBefore), len(logsBefore))
 	}
@@ -173,8 +173,8 @@ func TestDeleteCommand(t *testing.T) {
 		t.Errorf("logsDeleted = %d, want 1", logsDeleted)
 	}
 
-	logsAfter, _ := db.GetTaskLogs(database, ptr("delete_test"), 10)
-	tasksAfterLogDelete, _ := db.GetAllTasks(database, ptr("delete_test"))
+	logsAfter, _ := db.GetTaskLogs(database, new("delete_test"), 10)
+	tasksAfterLogDelete, _ := db.GetAllTasks(database, new("delete_test"))
 	if len(logsAfter) != 0 || len(tasksAfterLogDelete) != 1 {
 		t.Errorf("after log delete: logs=%d tasks=%d, want 0/1", len(logsAfter), len(tasksAfterLogDelete))
 	}
@@ -187,7 +187,7 @@ func TestDeleteCommand(t *testing.T) {
 		t.Errorf("taskDeleted = %d, want 1", taskDeleted)
 	}
 
-	tasksAfter, _ := db.GetAllTasks(database, ptr("delete_test"))
+	tasksAfter, _ := db.GetAllTasks(database, new("delete_test"))
 	if len(tasksAfter) != 0 {
 		t.Errorf("tasksAfter = %d, want 0", len(tasksAfter))
 	}
