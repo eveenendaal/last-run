@@ -291,10 +291,7 @@ func pageUp(cursor, page int) int {
 	if page < 1 {
 		page = 1
 	}
-	c := cursor - page
-	if c < 0 {
-		c = 0
-	}
+	c := max(cursor-page, 0)
 	return c
 }
 
@@ -305,10 +302,7 @@ func pageDown(cursor, page, n int) int {
 	if page < 1 {
 		page = 1
 	}
-	c := cursor + page
-	if c > n-1 {
-		c = n - 1
-	}
+	c := min(cursor+page, n-1)
 	return c
 }
 

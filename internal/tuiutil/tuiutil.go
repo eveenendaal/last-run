@@ -62,10 +62,7 @@ func Panel(width, height int, title, rightTitle string, border lipgloss.Color, c
 		title = ansi.Truncate(title, innerW, "")
 		lw = ansi.StringWidth(title)
 	}
-	dashCount := innerW - lw - rw
-	if dashCount < 0 {
-		dashCount = 0
-	}
+	dashCount := max(innerW-lw-rw, 0)
 	var top strings.Builder
 	top.WriteString(bs.Render("╭"))
 	top.WriteString(titleStyle.Render(title))
@@ -78,7 +75,7 @@ func Panel(width, height int, title, rightTitle string, border lipgloss.Color, c
 	var b strings.Builder
 	b.WriteString(top.String())
 	b.WriteString("\n")
-	for i := 0; i < innerH; i++ {
+	for i := range innerH {
 		line := ""
 		if i < len(contentLines) {
 			line = contentLines[i]
@@ -95,10 +92,7 @@ func Panel(width, height int, title, rightTitle string, border lipgloss.Color, c
 // layoutControls splits shortcuts into wrapped lines of rendered spans and
 // reports the number of text lines used.
 func layoutControls(width int, shortcuts []Shortcut) ([]string, int) {
-	contentWidth := width - 2
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
+	contentWidth := max(width-2, 1)
 
 	var lines []string
 	var cur strings.Builder
@@ -203,14 +197,8 @@ func PlaceOverlay(bg, fg string, totalW, totalH int) string {
 	}
 	fgH := len(fgLines)
 
-	top := (totalH - fgH) / 2
-	if top < 0 {
-		top = 0
-	}
-	left := (totalW - fgW) / 2
-	if left < 0 {
-		left = 0
-	}
+	top := max((totalH-fgH)/2, 0)
+	left := max((totalW-fgW)/2, 0)
 
 	for i, fl := range fgLines {
 		row := top + i

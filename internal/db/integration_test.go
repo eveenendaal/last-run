@@ -17,7 +17,7 @@ func TestCompleteTaskWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tasks, _ := db.GetAllTasks(database, ptr(taskID))
+	tasks, _ := db.GetAllTasks(database, new(taskID))
 	if len(tasks) != 1 || tasks[0].ID != taskID || tasks[0].LastRun != nil {
 		t.Fatalf("after insert: %+v", tasks)
 	}
@@ -28,7 +28,7 @@ func TestCompleteTaskWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	afterStart, _ := db.GetAllTasks(database, ptr(taskID))
+	afterStart, _ := db.GetAllTasks(database, new(taskID))
 	if afterStart[0].LastRun != nil {
 		t.Error("expected LastRun cleared after start")
 	}
@@ -40,13 +40,13 @@ func TestCompleteTaskWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, _ := db.GetAllTasks(database, ptr(taskID))
+	updated, _ := db.GetAllTasks(database, new(taskID))
 	if updated[0].LastRun == nil {
 		t.Fatal("expected LastRun set after done")
 	}
 	lastRun := *updated[0].LastRun
 
-	logs, _ := db.GetTaskLogs(database, ptr(taskID), 10)
+	logs, _ := db.GetTaskLogs(database, new(taskID), 10)
 	if len(logs) != 1 || logs[0].ID != taskID || logs[0].ElapsedMs <= 0 {
 		t.Fatalf("logs = %+v, want one entry with elapsed > 0", logs)
 	}
@@ -59,7 +59,7 @@ func TestCompleteTaskWorkflow(t *testing.T) {
 	if logsDeleted != 1 {
 		t.Errorf("logsDeleted = %d, want 1", logsDeleted)
 	}
-	logsAfter, _ := db.GetTaskLogs(database, ptr(taskID), 10)
+	logsAfter, _ := db.GetTaskLogs(database, new(taskID), 10)
 	if len(logsAfter) != 0 {
 		t.Errorf("logsAfter = %d, want 0", len(logsAfter))
 	}
@@ -68,7 +68,7 @@ func TestCompleteTaskWorkflow(t *testing.T) {
 	if taskDeleted != 1 {
 		t.Errorf("taskDeleted = %d, want 1", taskDeleted)
 	}
-	final, _ := db.GetAllTasks(database, ptr(taskID))
+	final, _ := db.GetAllTasks(database, new(taskID))
 	if len(final) != 0 {
 		t.Errorf("final = %d, want 0", len(final))
 	}
@@ -100,7 +100,7 @@ func TestMultipleTaskManagement(t *testing.T) {
 
 	// last_run is cleared for all tasks after a start.
 	for _, id := range taskIDs {
-		status, _ := db.GetAllTasks(database, ptr(id))
+		status, _ := db.GetAllTasks(database, new(id))
 		if status[0].LastRun != nil {
 			t.Errorf("task %q: expected LastRun nil", id)
 		}
@@ -139,7 +139,7 @@ func TestAutoArchiveOnDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	logs, _ := db.GetTaskLogs(database, ptr("auto_archive_test"), 10)
+	logs, _ := db.GetTaskLogs(database, new("auto_archive_test"), 10)
 	if len(logs) != 1 {
 		t.Fatalf("len(logs) = %d, want 1", len(logs))
 	}
@@ -150,7 +150,7 @@ func TestAutoArchiveOnDone(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	logs, _ = db.GetTaskLogs(database, ptr("auto_archive_test"), 10)
+	logs, _ = db.GetTaskLogs(database, new("auto_archive_test"), 10)
 	if len(logs) != 0 {
 		t.Errorf("len(logs) = %d, want 0", len(logs))
 	}
@@ -194,7 +194,7 @@ func TestArchiveDefaultFallsBackWhenRetentionOff(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	logs, _ := db.GetTaskLogs(database, ptr("archive_off_test"), 10)
+	logs, _ := db.GetTaskLogs(database, new("archive_off_test"), 10)
 	if len(logs) != 1 {
 		t.Errorf("len(logs) = %d, want 1", len(logs))
 	}
@@ -222,7 +222,7 @@ func TestArchivePreservesRecentLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	logs, _ := db.GetTaskLogs(database, ptr("preserve_test"), 10)
+	logs, _ := db.GetTaskLogs(database, new("preserve_test"), 10)
 	if len(logs) != 2 {
 		t.Fatalf("len(logs) = %d, want 2", len(logs))
 	}
@@ -233,7 +233,7 @@ func TestArchivePreservesRecentLogs(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	logs, _ = db.GetTaskLogs(database, ptr("preserve_test"), 10)
+	logs, _ = db.GetTaskLogs(database, new("preserve_test"), 10)
 	if len(logs) != 1 {
 		t.Errorf("len(logs) = %d, want 1", len(logs))
 	}
