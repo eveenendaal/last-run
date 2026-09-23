@@ -61,10 +61,10 @@ go build -o lastrun ./cmd/lastrun
 cp lastrun /usr/local/bin/
 ```
 
-Or, with [Task](https://taskfile.dev):
+Or, with `make` (installs into `$GOBIN`, or `$GOPATH/bin`):
 
 ```bash
-task install     # go install .
+make install
 ```
 
 ## Quick start
@@ -90,8 +90,9 @@ lastrun --quiet check --id my-task --duration 24h || run-the-thing
 ### `start` / `done` / `update`
 
 `start` stamps the task with a start time and clears any previous last-run
-time. `done` (also aliased as `update`) stamps the last-run time and, if a
-start time was recorded, writes an elapsed-time entry to the log.
+time. `done` (also available as `update`) stamps the last-run time and, if a
+start time was recorded, writes an elapsed-time entry to the log. It also
+removes log entries older than the retention period (see `set-retention`).
 
 ```bash
 lastrun start --id backup
@@ -146,6 +147,19 @@ lastrun status --json
 The status view sorts by last-run time by default; override with
 `--sort task|status|duration|elapsed|last-run`.
 
+Each task has one of four statuses, used for row colours in the TUI and the
+`status` field in JSON:
+
+| Status    | Meaning                                                        |
+|-----------|----------------------------------------------------------------|
+| `running` | Started but not yet done                                       |
+| `due`     | Last run is older than the threshold from its last `check`     |
+| `ok`      | Has run, and is within its threshold (or has none)             |
+| `unknown` | Has never been marked done                                     |
+
+Inside the per-task history view, `d` deletes the selected log entry and `r`
+refreshes; `q` / `Esc` goes back.
+
 ### `logs`
 
 Show the most recent completion log entries (each entry has a task ID, an
@@ -188,9 +202,10 @@ lastrun archive --id backup              # only for one task
 
 ### `set-retention`
 
-Set the log retention period for automatic cleanup. After this is set,
-every `done`/`update` call will automatically delete log entries older
-than the threshold. Pass `off` (or `0`) to disable auto-cleanup.
+Set the log retention period for automatic cleanup. Every `done`/`update`
+call deletes log entries older than the threshold, which defaults to 30 days
+when nothing is set. Pass `off` (or `0`) to disable auto-cleanup; a manual
+`archive` without `--older-than` then falls back to 30 days.
 
 ```bash
 lastrun set-retention 60d                # keep 60 days of logs
@@ -202,8 +217,8 @@ The retention setting can also be changed interactively via `lastrun settings`.
 
 ### `settings`
 
-Open an interactive TUI for viewing and editing stored settings (currently
-just `log_retention`):
+Open an interactive TUI for viewing and editing settings: `log_retention`
+and `db_location` (the database file to use from the next run on):
 
 ```bash
 lastrun settings
@@ -211,13 +226,22 @@ lastrun settings
 
 Keybindings inside the TUI:
 
-| Key            | Action                                  |
-|----------------|------------------------------------------|
-| `Enter`        | Edit the selected setting (or save while editing) |
-| `Esc`          | Cancel the edit, or quit if not editing  |
-| `Backspace`    | Delete a character while editing         |
-| `?`            | Toggle the help overlay                  |
-| `q`            | Quit                                      |
+| Key            | Action                                             |
+|----------------|----------------------------------------------------|
+| `↑` / `↓` (`k`/`j`) | Move selection                                |
+| `Enter`        | Edit the selected setting (or save while editing)  |
+| `e`            | Export (copy) the database to a new file           |
+| `i`            | Import: use an existing database file from now on  |
+| `Esc`          | Cancel the edit, or quit if not editing            |
+| `Backspace`    | Delete a character while editing                   |
+| `?`            | Toggle the help overlay                            |
+| `q`            | Quit                                               |
+
+Changing `db_location` offers to **migrate** the current data to the new
+path, start a **new** empty database there, or **switch** to a database that
+already exists at that path. The chosen path is saved in
+`$XDG_CONFIG_HOME/lastrun/config.json`; `--db-path` / `LASTRUN_DB_PATH` still
+take priority.
 
 ### `reset`
 
@@ -237,8 +261,8 @@ Run `lastrun completion --help` for per-shell setup instructions.
 
 ### Quiet mode
 
-`--quiet` (`-q`) is a top-level flag — pass it **before** the subcommand
-to suppress informational output. Errors and exit codes are unchanged,
+`--quiet` (`-q`) is a global flag that suppresses informational output. It
+can go before or after the subcommand. Errors and exit codes are unchanged,
 which makes the flag safe to use in cron.
 
 ```bash
@@ -257,19 +281,17 @@ See the [`examples/`](examples/) directory:
 
 ## Development
 
-The project uses [Task](https://taskfile.dev) to wrap the common Go
-invocations:
+A small `Makefile` wraps the common Go invocations:
 
 ```bash
-task test                          # go test ./...
-task build                         # build dist/lastrun + SHA256 (native target)
-GOOS=windows GOARCH=amd64 task build  # cross-compile for a specific target
-task install                       # go install .
-task status                        # run the status TUI against your local DB
-task clean                         # remove dist/
+make test                          # go test ./...
+make build                         # build dist/lastrun + SHA256 (native target)
+GOOS=windows GOARCH=amd64 make build  # cross-compile for a specific target
+make install                       # build into $GOBIN (or $GOPATH/bin)
+make clean                         # remove dist/
 ```
 
-Run `task test` before committing — that's what CI runs on every PR.
+Run `make test` before committing — that's what CI runs on every PR.
 
 ## Project structure
 
@@ -278,21 +300,21 @@ last-run/
 ├── cmd/
 │   └── lastrun/
 │       └── main.go          # CLI entry point: wires cobra tree, runs via fang
-├── main.go                  # Thin compatibility wrapper for the repo-root build
+├── main.go                  # Same entry point, for `go build .` at the repo root
 ├── internal/
 │   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
-│   ├── db/                  # SQLite connection, schema, CRUD
+│   ├── config/              # Per-user JSON config (custom DB location)
+│   ├── db/                  # SQLite connection, schema, CRUD, task status
 │   ├── model/               # Task struct + persistence
 │   ├── format/              # Duration parsing/formatting, RFC3339 helpers
 │   ├── apperr/              # Error types
 │   ├── display/             # JSON status, log table, ANSI colours
 │   ├── tui/                 # Bubble Tea interactive status view
 │   ├── settings/            # Bubble Tea interactive settings editor
-│   ├── tuiutil/             # Shared TUI panels/overlays
-│   └── version/             # Release version-bump helper
+│   └── tuiutil/             # Shared TUI panels/overlays
 ├── examples/                # Example shell scripts
 ├── docs/                    # Architecture notes
-├── Taskfile.yml             # Task runner definitions
+├── Makefile                 # test / build / install / clean targets
 └── go.mod / go.sum
 ```
 

@@ -79,3 +79,29 @@ func TestFormatDatetime(t *testing.T) {
 		t.Errorf("FormatDatetime = %q, want to contain ':'", formatted)
 	}
 }
+
+func TestFormatDurationNegative(t *testing.T) {
+	if got := FormatDuration(-90 * time.Second); got != "-1m30s" {
+		t.Errorf("FormatDuration(-90s) = %q, want -1m30s", got)
+	}
+}
+
+func TestRFC3339RoundTrip(t *testing.T) {
+	local := time.FixedZone("UTC+2", 2*3600)
+	in := time.Date(2024, 2, 29, 14, 30, 0, 250_000_000, local)
+
+	s := FormatRFC3339(in)
+	if s != "2024-02-29T12:30:00.25+00:00" {
+		t.Errorf("FormatRFC3339 = %q, want UTC with +00:00 offset and trimmed fraction", s)
+	}
+	got := ParseRFC3339Opt(s)
+	if got == nil || !got.Equal(in) || got.Location() != time.UTC {
+		t.Errorf("ParseRFC3339Opt(%q) = %v, want %v in UTC", s, got, in)
+	}
+
+	for _, bad := range []string{"", "yesterday"} {
+		if got := ParseRFC3339Opt(bad); got != nil {
+			t.Errorf("ParseRFC3339Opt(%q) = %v, want nil", bad, got)
+		}
+	}
+}

@@ -25,26 +25,26 @@ Run the test suite:
 go test ./...
 ```
 
-Or using the Taskfile:
+Or using the Makefile:
 ```bash
-task test
+make test
 ```
 
-`task test` is the canonical pre-commit check — please run it before
-pushing. CI (`.github/workflows/test.yml`) runs the same command on every
-pull request.
+`make test` is the canonical pre-commit check — please run it before
+pushing. CI (`.github/workflows/test.yml`) runs the same command, plus
+`make build`, on every pull request.
 
 ## Building
 
 Build a release binary:
 ```bash
-task build
+make build
 ```
 
 This produces `dist/lastrun` plus a matching `.sha256`. Cross-compile for
 another platform with `GOOS`/`GOARCH`, e.g.:
 ```bash
-GOOS=windows GOARCH=amd64 task build
+GOOS=windows GOARCH=amd64 make build
 ```
 
 ## Code Style

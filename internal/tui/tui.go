@@ -1,12 +1,13 @@
 // Package tui implements the interactive `lastrun status` view using Bubble
-// Tea, replacing the original ratatui implementation. It renders a sortable
-// task table, a per-task history drill-down with stats, delete-confirmation
-// popups, and a help overlay, refreshing every 250ms so elapsed counters tick.
+// Tea. It renders a sortable task table, a per-task history drill-down with
+// stats, delete-confirmation popups, and a help overlay, refreshing every
+// 250ms so elapsed counters tick.
 package tui
 
 import (
 	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -24,6 +25,8 @@ const (
 	SortDuration
 	SortElapsed
 	SortLastRun
+
+	numSortCols = iota
 )
 
 const refreshInterval = 250 * time.Millisecond
@@ -36,19 +39,6 @@ const (
 	stateHistory
 )
 
-type taskRow struct {
-	id        string
-	lastRun   *time.Time
-	startTime *time.Time
-	duration  *int64
-}
-
-type logEntry struct {
-	raw       string
-	endTime   time.Time
-	elapsedMs int64
-}
-
 type tickMsg time.Time
 
 func tick() tea.Cmd {
@@ -59,7 +49,7 @@ type model struct {
 	db       *sql.DB
 	idFilter *string
 
-	tasks   []taskRow
+	tasks   []db.TaskStatus
 	cursor  int
 	sortCol SortCol
 	sortAsc bool
@@ -68,7 +58,7 @@ type model struct {
 	confirmDeleteID string
 
 	historyTaskID        string
-	historyLogs          []logEntry
+	historyLogs          []db.LogEntry
 	historyCursor        int
 	historyConfirmDelete string // raw end_time; "" means no confirmation pending
 
@@ -113,84 +103,52 @@ func (m *model) Init() tea.Cmd {
 
 func (m *model) loadTasks() error {
 	prevID := m.selectedID()
-	rows, err := db.GetAllTasks(m.db, m.idFilter)
+	tasks, err := db.GetAllTasks(m.db, m.idFilter)
 	if err != nil {
 		return err
 	}
-	m.tasks = m.tasks[:0]
-	for _, r := range rows {
-		m.tasks = append(m.tasks, taskRow{id: r.ID, lastRun: r.LastRun, startTime: r.StartTime, duration: r.Duration})
-	}
+	m.tasks = tasks
 	m.lastUpdated = time.Now().UTC()
 	m.sortTasks()
 	m.restoreCursor(prevID)
 	return nil
 }
 
+// restoreCursor keeps the selection on prevID when it is still listed,
+// otherwise clamps the cursor to the new list length.
 func (m *model) restoreCursor(prevID string) {
-	if len(m.tasks) == 0 {
-		m.cursor = 0
+	if i := slices.IndexFunc(m.tasks, func(t db.TaskStatus) bool { return t.ID == prevID }); prevID != "" && i >= 0 {
+		m.cursor = i
 		return
 	}
-	if prevID != "" {
-		for i, t := range m.tasks {
-			if t.id == prevID {
-				m.cursor = i
-				return
-			}
-		}
-	}
-	if m.cursor >= len(m.tasks) {
-		m.cursor = len(m.tasks) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
+	m.cursor = clampCursor(m.cursor, len(m.tasks))
+}
+
+// clampCursor keeps cursor within [0, n-1] (or 0 when n is 0).
+func clampCursor(cursor, n int) int {
+	return max(min(cursor, n-1), 0)
 }
 
 func (m *model) loadHistory(taskID string) error {
-	entries, err := db.GetTaskLogEntries(m.db, taskID)
-	if err != nil {
-		return err
-	}
 	m.historyTaskID = taskID
-	m.historyLogs = m.historyLogs[:0]
-	for _, e := range entries {
-		m.historyLogs = append(m.historyLogs, logEntry{raw: e.Raw, endTime: e.EndTime, elapsedMs: e.ElapsedMs})
-	}
+	m.historyLogs = nil
 	m.historyCursor = 0
-	if len(m.historyLogs) == 0 {
-		m.historyCursor = 0
-	}
-	return nil
+	return m.refreshHistory()
 }
 
+// refreshHistory reloads the history entries, keeping the selection on the
+// same entry when it still exists.
 func (m *model) refreshHistory() error {
 	prevRaw := m.selectedHistoryRaw()
-	prevIdx := m.historyCursor
 	entries, err := db.GetTaskLogEntries(m.db, m.historyTaskID)
 	if err != nil {
 		return err
 	}
-	m.historyLogs = m.historyLogs[:0]
-	for _, e := range entries {
-		m.historyLogs = append(m.historyLogs, logEntry{raw: e.Raw, endTime: e.EndTime, elapsedMs: e.ElapsedMs})
-	}
-	newIdx := -1
-	if prevRaw != "" {
-		for i, e := range m.historyLogs {
-			if e.raw == prevRaw {
-				newIdx = i
-				break
-			}
-		}
-	}
-	if newIdx >= 0 {
-		m.historyCursor = newIdx
-	} else if len(m.historyLogs) == 0 {
-		m.historyCursor = 0
-	} else if prevIdx >= len(m.historyLogs) {
-		m.historyCursor = len(m.historyLogs) - 1
+	m.historyLogs = entries
+	if i := slices.IndexFunc(entries, func(e db.LogEntry) bool { return e.Raw == prevRaw }); prevRaw != "" && i >= 0 {
+		m.historyCursor = i
+	} else {
+		m.historyCursor = clampCursor(m.historyCursor, len(entries))
 	}
 	return nil
 }
@@ -201,62 +159,43 @@ func (m *model) sortTasks() {
 	now := time.Now().UTC()
 	switch m.sortCol {
 	case SortTask:
-		sort.SliceStable(m.tasks, func(i, j int) bool { return m.tasks[i].id < m.tasks[j].id })
+		sort.SliceStable(m.tasks, func(i, j int) bool { return m.tasks[i].ID < m.tasks[j].ID })
 	case SortStatus:
 		sort.SliceStable(m.tasks, func(i, j int) bool {
 			return taskStatusOrder(m.tasks[i], now) < taskStatusOrder(m.tasks[j], now)
 		})
 	case SortDuration:
-		sort.SliceStable(m.tasks, func(i, j int) bool { return durationLess(m.tasks[i].duration, m.tasks[j].duration) })
+		sort.SliceStable(m.tasks, func(i, j int) bool { return nilLastLess(m.tasks[i].Duration, m.tasks[j].Duration, lessInt64) })
 	case SortElapsed:
 		sort.SliceStable(m.tasks, func(i, j int) bool {
 			return elapsedMillis(m.tasks[i], now) < elapsedMillis(m.tasks[j], now)
 		})
 	case SortLastRun:
-		sort.SliceStable(m.tasks, func(i, j int) bool { return timeLess(m.tasks[i].lastRun, m.tasks[j].lastRun) })
+		sort.SliceStable(m.tasks, func(i, j int) bool { return nilLastLess(m.tasks[i].LastRun, m.tasks[j].LastRun, time.Time.Before) })
 	}
 	if !m.sortAsc {
-		for i, j := 0, len(m.tasks)-1; i < j; i, j = i+1, j-1 {
-			m.tasks[i], m.tasks[j] = m.tasks[j], m.tasks[i]
-		}
+		slices.Reverse(m.tasks)
 	}
 }
 
-// durationLess orders Some before None; among Some, ascending by value.
-func durationLess(a, b *int64) bool {
-	if a == nil && b == nil {
-		return false
+// nilLastLess orders set values before nil ones; among set values it defers
+// to less.
+func nilLastLess[T any](a, b *T, less func(T, T) bool) bool {
+	if a == nil || b == nil {
+		return a != nil && b == nil
 	}
-	if a == nil {
-		return false // a (None) is greater
-	}
-	if b == nil {
-		return true // a (Some) before b (None)
-	}
-	return *a < *b
+	return less(*a, *b)
 }
 
-// timeLess orders Some before None; among Some, ascending by time.
-func timeLess(a, b *time.Time) bool {
-	if a == nil && b == nil {
-		return false
-	}
-	if a == nil {
-		return false
-	}
-	if b == nil {
-		return true
-	}
-	return a.Before(*b)
-}
+func lessInt64(a, b int64) bool { return a < b }
 
 func (m *model) cycleSortNext() {
-	m.sortCol = (m.sortCol + 1) % 5
+	m.sortCol = (m.sortCol + 1) % numSortCols
 	m.sortTasks()
 }
 
 func (m *model) cycleSortPrev() {
-	m.sortCol = (m.sortCol + 4) % 5
+	m.sortCol = (m.sortCol + numSortCols - 1) % numSortCols
 	m.sortTasks()
 }
 
@@ -291,8 +230,7 @@ func pageUp(cursor, page int) int {
 	if page < 1 {
 		page = 1
 	}
-	c := max(cursor-page, 0)
-	return c
+	return max(cursor-page, 0)
 }
 
 func pageDown(cursor, page, n int) int {
@@ -302,20 +240,19 @@ func pageDown(cursor, page, n int) int {
 	if page < 1 {
 		page = 1
 	}
-	c := min(cursor+page, n-1)
-	return c
+	return min(cursor+page, n-1)
 }
 
 func (m *model) selectedID() string {
 	if m.cursor >= 0 && m.cursor < len(m.tasks) {
-		return m.tasks[m.cursor].id
+		return m.tasks[m.cursor].ID
 	}
 	return ""
 }
 
 func (m *model) selectedHistoryRaw() string {
 	if m.historyCursor >= 0 && m.historyCursor < len(m.historyLogs) {
-		return m.historyLogs[m.historyCursor].raw
+		return m.historyLogs[m.historyCursor].Raw
 	}
 	return ""
 }
@@ -484,63 +421,36 @@ func (m *model) handleHistoryKey(key string) (tea.Model, tea.Cmd) {
 
 // ── status helpers ──────────────────────────────────────────────────────────
 
-func taskStatusOrder(t taskRow, now time.Time) int {
-	if t.startTime != nil && t.lastRun == nil {
-		return 1
-	}
-	if t.lastRun != nil {
-		if t.duration != nil {
-			if now.Sub(*t.lastRun) > time.Duration(*t.duration)*time.Second {
-				return 2
-			}
-			return 0
-		}
-		return 0
-	}
-	return 3
+// statusOrder ranks statuses for the Status sort column.
+var statusOrder = map[string]int{
+	db.StatusOK:      0,
+	db.StatusRunning: 1,
+	db.StatusDue:     2,
+	db.StatusUnknown: 3,
 }
 
-func elapsedMillis(t taskRow, now time.Time) int64 {
-	switch {
-	case t.startTime != nil && t.lastRun != nil && t.startTime.Before(*t.lastRun):
-		return t.lastRun.Sub(*t.startTime).Milliseconds()
-	case t.startTime != nil && t.lastRun == nil:
-		return now.Sub(*t.startTime).Milliseconds()
-	default:
-		return 0
-	}
+func taskStatusOrder(t db.TaskStatus, now time.Time) int {
+	return statusOrder[t.Status(now)]
 }
 
-func taskStatusStr(t taskRow, now time.Time) string {
-	if t.startTime != nil && t.lastRun == nil {
-		return "running"
-	}
-	if t.lastRun != nil {
-		if t.duration != nil {
-			if now.Sub(*t.lastRun) > time.Duration(*t.duration)*time.Second {
-				return "due"
-			}
-			return "ok"
-		}
-		return "ok"
-	}
-	return "unknown"
+func elapsedMillis(t db.TaskStatus, now time.Time) int64 {
+	d, _ := t.Elapsed(now)
+	return d.Milliseconds()
 }
 
-func taskColor(t taskRow, now time.Time) lipgloss.Color {
-	if t.startTime != nil && t.lastRun == nil {
-		return lipgloss.Color("3") // yellow
+func taskColor(t db.TaskStatus, now time.Time) lipgloss.Color {
+	switch t.Status(now) {
+	case db.StatusRunning:
+		return colYellow
+	case db.StatusDue:
+		return colRed
+	case db.StatusUnknown:
+		return lipgloss.Color("4") // blue
 	}
-	if t.lastRun != nil {
-		if t.duration != nil {
-			if now.Sub(*t.lastRun) > time.Duration(*t.duration)*time.Second {
-				return lipgloss.Color("1") // red
-			}
-			return lipgloss.Color("2") // green
-		}
-		return lipgloss.Color("15") // white
+	if t.Duration == nil {
+		return colWhite // ok, but no threshold to judge against
 	}
-	return lipgloss.Color("4") // blue
+	return colGreen
 }
 
 func logEntryColor(ago time.Duration) lipgloss.Color {
@@ -596,23 +506,18 @@ func (m *model) historyStats() (int64, int64, int64, int64, bool, bool) {
 		return 0, 0, 0, 0, false, false
 	}
 	var sum int64
-	min := m.historyLogs[0].elapsedMs
-	max := m.historyLogs[0].elapsedMs
+	lo, hi := m.historyLogs[0].ElapsedMs, m.historyLogs[0].ElapsedMs
 	for _, e := range m.historyLogs {
-		sum += e.elapsedMs
-		if e.elapsedMs < min {
-			min = e.elapsedMs
-		}
-		if e.elapsedMs > max {
-			max = e.elapsedMs
-		}
+		sum += e.ElapsedMs
+		lo = min(lo, e.ElapsedMs)
+		hi = max(hi, e.ElapsedMs)
 	}
 	avg := sum / int64(n)
 	if n >= 2 {
-		newest := m.historyLogs[0].endTime
-		oldest := m.historyLogs[n-1].endTime
+		newest := m.historyLogs[0].EndTime
+		oldest := m.historyLogs[n-1].EndTime
 		spanMs := newest.Sub(oldest).Milliseconds()
-		return avg, min, max, spanMs / int64(n-1), true, true
+		return avg, lo, hi, spanMs / int64(n-1), true, true
 	}
-	return avg, min, max, 0, false, true
+	return avg, lo, hi, 0, false, true
 }

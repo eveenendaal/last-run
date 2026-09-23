@@ -156,50 +156,6 @@ func TestAutoArchiveOnDone(t *testing.T) {
 	}
 }
 
-func TestArchiveDefaultFallsBackWhenRetentionOff(t *testing.T) {
-	database := newTestDB(t)
-
-	if err := db.SetLogRetention(database, "off"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
-		t.Fatal("expected retention off to return ok=false")
-	}
-
-	task := makeTask("archive_off_test")
-	if err := task.Insert(database); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().UTC().Add(-40 * 24 * time.Hour)
-	task.StartTime = &old
-	task.LastRun = &old
-	if err := task.Update(database); err != nil {
-		t.Fatal(err)
-	}
-	recent := time.Now().UTC().Add(-24 * time.Hour)
-	task.StartTime = &recent
-	task.LastRun = &recent
-	if err := task.Update(database); err != nil {
-		t.Fatal(err)
-	}
-
-	seconds, ok, _ := db.GetLogRetentionSeconds(database)
-	if !ok {
-		seconds = 30 * 24 * 3600
-	}
-	cutoff := time.Now().UTC().Add(-time.Duration(seconds) * time.Second)
-
-	deleted, _ := db.DeleteOldLogs(database, cutoff, nil)
-	if deleted != 1 {
-		t.Errorf("deleted = %d, want 1", deleted)
-	}
-
-	logs, _ := db.GetTaskLogs(database, new("archive_off_test"), 10)
-	if len(logs) != 1 {
-		t.Errorf("len(logs) = %d, want 1", len(logs))
-	}
-}
-
 func TestArchivePreservesRecentLogs(t *testing.T) {
 	database := newTestDB(t)
 

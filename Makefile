@@ -1,6 +1,7 @@
 .PHONY: test build clean install
 
-VERSION ?= $(shell echo "$${RELEASE_VERSION:-$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo dev)}")
+# RELEASE_VERSION (set by CI) wins, then the latest git tag, then "dev".
+VERSION ?= $(or $(RELEASE_VERSION),$(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),dev)
 LDFLAGS = -s -w -X main.version=$(VERSION)
 
 test:

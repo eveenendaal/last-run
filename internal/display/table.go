@@ -2,6 +2,7 @@ package display
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -10,9 +11,9 @@ import (
 	"github.com/eveenendaal/last-run/internal/format"
 )
 
-// PrintTaskLogs renders task logs as a bordered table with columns
+// WriteTaskLogs renders task logs as a bordered table with columns
 // TASK ID | COMPLETION TIME | DURATION.
-func PrintTaskLogs(logs []db.LogRow) {
+func WriteTaskLogs(w io.Writer, logs []db.LogRow) {
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true).Padding(0, 1)
 	cellStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Padding(0, 1)
 
@@ -27,14 +28,12 @@ func PrintTaskLogs(logs []db.LogRow) {
 		}).
 		Headers("TASK ID", "COMPLETION TIME", "DURATION")
 
+	for _, l := range logs {
+		t.Row(l.ID, format.FormatDatetime(l.EndTime), format.FormatDuration(time.Duration(l.ElapsedMs)*time.Millisecond))
+	}
 	if len(logs) == 0 {
 		t.Row("No logs found", "", "")
-	} else {
-		for _, l := range logs {
-			durationStr := format.FormatDuration(time.Duration(l.ElapsedMs) * time.Millisecond)
-			t.Row(l.ID, format.FormatDatetime(l.EndTime), durationStr)
-		}
 	}
 
-	fmt.Println(t)
+	fmt.Fprintln(w, t)
 }

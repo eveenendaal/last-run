@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/eveenendaal/last-run/internal/db"
 	"github.com/eveenendaal/last-run/internal/format"
 	"github.com/eveenendaal/last-run/internal/tuiutil"
 )
@@ -25,12 +26,7 @@ func (m *model) View() string {
 	}
 	now := time.Now().UTC()
 
-	var shortcuts []tuiutil.Shortcut
-	if m.state == stateHistory {
-		shortcuts = basicShortcuts(true)
-	} else {
-		shortcuts = basicShortcuts(false)
-	}
+	shortcuts := basicShortcuts(m.state == stateHistory)
 
 	ctrlH := tuiutil.ControlsHeight(m.width, shortcuts)
 	mainH := max(m.height-ctrlH, 3)
@@ -104,8 +100,8 @@ func (m *model) renderTable(mainH int, now time.Time) string {
 				marker = "▶ "
 			}
 			cells := []string{
-				tuiutil.Fit(t.id, taskW),
-				tuiutil.Fit(taskStatusStr(t, now), statusW),
+				tuiutil.Fit(t.ID, taskW),
+				tuiutil.Fit(t.Status(now), statusW),
 				tuiutil.Fit(durationCell(t), durW),
 				tuiutil.Fit(elapsedCell(t, now), elapW),
 				tuiutil.Fit(lastRunCell(t, now), lastW),
@@ -128,29 +124,25 @@ func (m *model) renderTable(mainH int, now time.Time) string {
 	return tuiutil.Panel(m.width, mainH, " Last Run Status ", right, colDarkGray, strings.Join(lines, "\n"))
 }
 
-func durationCell(t taskRow) string {
-	if t.duration == nil {
+func durationCell(t db.TaskStatus) string {
+	if t.Duration == nil {
 		return "-"
 	}
-	return format.FormatDuration(time.Duration(*t.duration) * time.Second)
+	return format.FormatDuration(time.Duration(*t.Duration) * time.Second)
 }
 
-func elapsedCell(t taskRow, now time.Time) string {
-	switch {
-	case t.startTime != nil && t.lastRun != nil && t.startTime.Before(*t.lastRun):
-		return format.FormatDuration(t.lastRun.Sub(*t.startTime))
-	case t.startTime != nil && t.lastRun == nil:
-		return format.FormatDuration(now.Sub(*t.startTime))
-	default:
-		return "-"
+func elapsedCell(t db.TaskStatus, now time.Time) string {
+	if d, ok := t.Elapsed(now); ok {
+		return format.FormatDuration(d)
 	}
+	return "-"
 }
 
-func lastRunCell(t taskRow, now time.Time) string {
-	if t.lastRun == nil {
+func lastRunCell(t db.TaskStatus, now time.Time) string {
+	if t.LastRun == nil {
 		return "-"
 	}
-	return format.FormatDuration(now.Sub(*t.lastRun))
+	return format.FormatDuration(now.Sub(*t.LastRun))
 }
 
 func (m *model) renderHistory(mainH int, now time.Time) string {
@@ -159,15 +151,15 @@ func (m *model) renderHistory(mainH int, now time.Time) string {
 
 	// Stats line.
 	var statsLine string
-	if avg, min, max, freq, hasFreq, ok := m.historyStats(); ok {
+	if avg, lo, hi, freq, hasFreq, ok := m.historyStats(); ok {
 		dg := lipgloss.NewStyle().Foreground(colDarkGray)
 		var b strings.Builder
 		b.WriteString(dg.Render("  Avg: "))
 		b.WriteString(lipgloss.NewStyle().Foreground(colWhite).Bold(true).Render(format.FormatDuration(msDur(avg))))
 		b.WriteString(dg.Render("   Min: "))
-		b.WriteString(lipgloss.NewStyle().Foreground(colGreen).Render(format.FormatDuration(msDur(min))))
+		b.WriteString(lipgloss.NewStyle().Foreground(colGreen).Render(format.FormatDuration(msDur(lo))))
 		b.WriteString(dg.Render("   Max: "))
-		b.WriteString(lipgloss.NewStyle().Foreground(colYellow).Render(format.FormatDuration(msDur(max))))
+		b.WriteString(lipgloss.NewStyle().Foreground(colYellow).Render(format.FormatDuration(msDur(hi))))
 		if hasFreq {
 			b.WriteString(dg.Render("   Freq: every ~"))
 			b.WriteString(lipgloss.NewStyle().Foreground(colCyan).Render(format.FormatDuration(msDur(freq))))
@@ -194,14 +186,14 @@ func (m *model) renderHistory(mainH int, now time.Time) string {
 		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(colDarkGray).Render("No log entries found."))
 	} else {
 		for i, e := range m.historyLogs {
-			ago := now.Sub(e.endTime)
+			ago := now.Sub(e.EndTime)
 			marker := "  "
 			if i == m.historyCursor {
 				marker = "▶ "
 			}
 			idxStr := tuiutil.Fit(fmt.Sprintf("%3d", i+1), idxW)
-			atStr := tuiutil.Fit(e.endTime.Local().Format("2006-01-02 15:04:05"), atW)
-			durStr := tuiutil.Fit(format.FormatDuration(msDur(e.elapsedMs)), durW)
+			atStr := tuiutil.Fit(e.EndTime.Local().Format("2006-01-02 15:04:05"), atW)
+			durStr := tuiutil.Fit(format.FormatDuration(msDur(e.ElapsedMs)), durW)
 			agoStr := tuiutil.Fit(formatAgo(ago), agoW)
 
 			if i == m.historyCursor {

@@ -1,5 +1,4 @@
-// Package apperr defines the application's sentinel errors and error types,
-// mirroring the variants of the original Rust AppError enum.
+// Package apperr defines the application's sentinel errors and error types.
 package apperr
 
 import "errors"
@@ -13,8 +12,7 @@ var (
 	ErrDataDirectoryNotFound = errors.New("Data directory not found")
 )
 
-// DurationParseError represents an invalid duration string. It mirrors the
-// Rust AppError::DurationParse(String) variant.
+// DurationParseError represents an invalid duration string.
 type DurationParseError struct {
 	Msg string
 }
