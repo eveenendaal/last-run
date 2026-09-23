@@ -1,5 +1,4 @@
-// Package format provides duration parsing/formatting and timestamp helpers
-// that mirror the original Rust implementation's behavior exactly.
+// Package format provides duration parsing/formatting and timestamp helpers.
 package format
 
 import (

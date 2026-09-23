@@ -1,11 +1,13 @@
 package db_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/eveenendaal/last-run/internal/apperr"
 	"github.com/eveenendaal/last-run/internal/db"
 	"github.com/eveenendaal/last-run/internal/model"
 )
@@ -237,39 +239,162 @@ func TestSettingsCRUD(t *testing.T) {
 	}
 }
 
-func TestLogRetentionSeconds(t *testing.T) {
+func TestLogRetention(t *testing.T) {
 	database := newTestDB(t)
 
-	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
-		t.Error("expected unset retention to return ok=false")
+	cases := []struct {
+		stored string // "" leaves the setting unset
+		want   time.Duration
+	}{
+		{"", db.DefaultLogRetention},
+		{"30d", 30 * 24 * time.Hour},
+		{"2w", 14 * 24 * time.Hour},
+		{"12h", 12 * time.Hour},
+		{"off", 0},
+		{"OFF", 0},
+		{"0", 0},
+		{"not_a_duration", db.DefaultLogRetention},
+	}
+	for _, c := range cases {
+		if c.stored != "" {
+			if err := db.SetSetting(database, "log_retention", c.stored); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := db.LogRetention(database)
+		if err != nil || got != c.want {
+			t.Errorf("LogRetention with %q = (%v, %v), want (%v, nil)", c.stored, got, err, c.want)
+		}
+	}
+}
+
+func TestSetLogRetention(t *testing.T) {
+	database := newTestDB(t)
+
+	for in, want := range map[string]string{"60d": "60d", "off": "off", "Off": "off", "0": "off"} {
+		if err := db.SetLogRetention(database, in); err != nil {
+			t.Fatalf("SetLogRetention(%q): %v", in, err)
+		}
+		if got, _, _ := db.GetSetting(database, "log_retention"); got != want {
+			t.Errorf("SetLogRetention(%q) stored %q, want %q", in, got, want)
+		}
 	}
 
-	if err := db.SetLogRetention(database, "30d"); err != nil {
-		t.Fatal(err)
+	var parseErr *apperr.DurationParseError
+	if err := db.SetLogRetention(database, "10x"); !errors.As(err, &parseErr) {
+		t.Errorf("SetLogRetention(10x) err = %v, want DurationParseError", err)
 	}
-	if secs, ok, _ := db.GetLogRetentionSeconds(database); !ok || secs != 30*24*3600 {
-		t.Errorf("got (%d, %v), want (%d, true)", secs, ok, 30*24*3600)
+}
+
+func TestTaskStatus(t *testing.T) {
+	now := time.Now().UTC()
+	at := func(d time.Duration) *time.Time { return new(now.Add(-d)) }
+	hour := int64(3600)
+
+	cases := []struct {
+		name        string
+		task        db.TaskStatus
+		wantStatus  string
+		wantElapsed time.Duration
+		wantOK      bool
+	}{
+		{"never run", db.TaskStatus{}, db.StatusUnknown, 0, false},
+		{"running", db.TaskStatus{StartTime: at(5 * time.Minute)}, db.StatusRunning, 5 * time.Minute, true},
+		{"done without threshold", db.TaskStatus{StartTime: at(3 * time.Hour), LastRun: at(2 * time.Hour)}, db.StatusOK, time.Hour, true},
+		{"done within threshold", db.TaskStatus{LastRun: at(30 * time.Minute), Duration: &hour}, db.StatusOK, 0, false},
+		{"overdue", db.TaskStatus{LastRun: at(2 * time.Hour), Duration: &hour}, db.StatusDue, 0, false},
+		{"start after last run", db.TaskStatus{StartTime: at(time.Minute), LastRun: at(time.Hour)}, db.StatusOK, 0, false},
+	}
+	for _, c := range cases {
+		if got := c.task.Status(now); got != c.wantStatus {
+			t.Errorf("%s: Status = %q, want %q", c.name, got, c.wantStatus)
+		}
+		if got, ok := c.task.Elapsed(now); got != c.wantElapsed || ok != c.wantOK {
+			t.Errorf("%s: Elapsed = (%v, %v), want (%v, %v)", c.name, got, ok, c.wantElapsed, c.wantOK)
+		}
+	}
+}
+
+func TestOldLogsFilteredByTask(t *testing.T) {
+	database := newTestDB(t)
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	for _, id := range []string{"a", "b"} {
+		task := makeTask(id)
+		if err := task.Insert(database); err != nil {
+			t.Fatal(err)
+		}
+		task.StartTime, task.LastRun = &old, &old
+		if err := task.Update(database); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	if err := db.SetLogRetention(database, "off"); err != nil {
+	cutoff := time.Now().UTC().Add(-24 * time.Hour)
+	if n, err := db.CountOldLogs(database, cutoff, new("a")); err != nil || n != 1 {
+		t.Errorf("CountOldLogs(a) = (%d, %v), want (1, nil)", n, err)
+	}
+	if n, err := db.CountOldLogs(database, cutoff, nil); err != nil || n != 2 {
+		t.Errorf("CountOldLogs(all) = (%d, %v), want (2, nil)", n, err)
+	}
+	if n, err := db.DeleteOldLogs(database, cutoff, new("a")); err != nil || n != 1 {
+		t.Errorf("DeleteOldLogs(a) = (%d, %v), want (1, nil)", n, err)
+	}
+	logs, _ := db.GetTaskLogs(database, nil, 0)
+	if len(logs) != 1 || logs[0].ID != "b" {
+		t.Errorf("remaining logs = %+v, want only b", logs)
+	}
+}
+
+func TestGetTaskLogsLimitAndOrder(t *testing.T) {
+	database := newTestDB(t)
+	task := makeTask("limited")
+	if err := task.Insert(database); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
-		t.Error("expected 'off' retention to return ok=false")
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := range 3 {
+		start, end := base.Add(time.Duration(i)*time.Minute), base.Add(time.Duration(i)*time.Minute+time.Second)
+		task.StartTime, task.LastRun = &start, &end
+		if err := task.Update(database); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	if err := db.SetLogRetention(database, "0"); err != nil {
+	logs, err := db.GetTaskLogs(database, nil, 2)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
-		t.Error("expected '0' retention to return ok=false")
+	if len(logs) != 2 || !logs[0].EndTime.After(logs[1].EndTime) {
+		t.Errorf("GetTaskLogs limit 2 = %+v, want 2 newest-first entries", logs)
+	}
+	if all, _ := db.GetTaskLogs(database, nil, 0); len(all) != 3 {
+		t.Errorf("GetTaskLogs limit 0 = %d entries, want 3", len(all))
 	}
 
-	if err := db.SetSetting(database, "log_retention", "not_a_duration"); err != nil {
+	entries, err := db.GetTaskLogEntries(database, "limited")
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("GetTaskLogEntries = (%d, %v), want 3", len(entries), err)
+	}
+	if n, err := db.DeleteTaskLogEntry(database, "limited", entries[0].Raw); err != nil || n != 1 {
+		t.Errorf("DeleteTaskLogEntry = (%d, %v), want (1, nil)", n, err)
+	}
+	if entries[0].ElapsedMs != 1000 {
+		t.Errorf("ElapsedMs = %d, want 1000", entries[0].ElapsedMs)
+	}
+}
+
+func TestOpenCreatesParentDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "dir", "data.db")
+	database, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer database.Close()
+	if err := db.InitDB(database); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := db.GetLogRetentionSeconds(database); ok {
-		t.Error("expected invalid retention to return ok=false")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("database file not created: %v", err)
 	}
 }
 

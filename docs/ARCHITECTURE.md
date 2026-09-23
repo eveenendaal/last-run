@@ -16,22 +16,21 @@ last-run/
 ├── cmd/
 │   └── lastrun/
 │       └── main.go          # CLI entry point: wires cobra tree, runs via fang
-├── main.go                  # Thin compatibility wrapper for repo-root builds
+├── main.go                  # Same entry point, for `go build .` at the repo root
 ├── internal/
 │   ├── cli/                 # cobra commands, dispatch, ShouldRunTask()
 │   ├── config/              # Per-user JSON config ($XDG_CONFIG_HOME/lastrun/config.json)
-│   ├── db/                  # Connection, schema, typed CRUD helpers
+│   ├── db/                  # Connection, schema, typed CRUD helpers, task status
 │   ├── model/               # Task struct + persistence
 │   ├── format/              # Duration parse/format, RFC3339 helpers
 │   ├── apperr/              # Sentinel errors + DurationParseError
 │   ├── display/             # JSON status, log table, ANSI colour constants
 │   ├── tui/                 # Bubble Tea interactive status view
 │   ├── settings/            # Bubble Tea interactive settings editor
-│   ├── tuiutil/             # Shared TUI primitives (panels, overlays, controls)
-│   └── version/             # Release version-bump helper
+│   └── tuiutil/             # Shared TUI primitives (panels, overlays, controls)
 ├── examples/                # Example shell scripts
 ├── docs/                    # This file
-├── Taskfile.yml             # Task runner targets
+├── Makefile                 # test / build / install / clean targets
 └── go.mod / go.sum
 ```
 
@@ -43,9 +42,11 @@ The cobra command tree: `start`, `done`/`update`, `check`, `status`, `logs`,
 completion is provided automatically by cobra's built-in `completion` command,
 covering bash/zsh/fish/powershell.) Commands are grouped for a tidy help layout,
 which is rendered with styling by [`charmbracelet/fang`](https://github.com/charmbracelet/fang).
-`cli` also owns `ShouldRunTask()`, the shared "is this task overdue?" logic used
-by both `check` and the TUI's status colouring. The database handle is opened in
-a `PersistentPreRunE` hook and closed afterwards.
+`cli` also owns `ShouldRunTask()`, the "is this task overdue?" check behind
+`check`. The database handle is opened in a `PersistentPreRunE` hook and closed
+when the command finishes. Handlers write to the command's output writer (so
+tests can capture it), and `check` reports "due" by returning `ErrTaskDue`,
+which `Execute` turns into a silent exit status 1.
 
 ### `config`
 Loads and saves `$XDG_CONFIG_HOME/lastrun/config.json`, a small JSON file that
@@ -63,6 +64,12 @@ the parent directory on demand and provides typed CRUD helpers over
 SQLite lock contention. Every query uses parameterized bindings. Also exposes
 `CopyDatabase`, which uses SQLite's `VACUUM INTO` to snapshot the live database
 to a new path without closing it.
+
+`TaskStatus.Status()` and `TaskStatus.Elapsed()` are the single source of the
+`running` / `due` / `ok` / `unknown` classification and elapsed time, shared by
+the JSON output and the status TUI. `LogRetention()` returns the effective
+retention period: the stored `log_retention`, `DefaultLogRetention` (30 days)
+when unset, or 0 when it is `off`.
 
 ### `model`
 `Task` is the in-memory representation of a row from the `tasks` table.
@@ -82,9 +89,10 @@ persisted as RFC3339 UTC strings.
 ### `display`
 Plain-output renderers driven from `cli` after the `db` layer returns data:
 
-- `json.go` — Serializes `lastrun status --json`: per-task ID, last-run time,
-  elapsed time, and computed status (`running` / `due` / `ok` / `unknown`).
-- `table.go` — Renders `lastrun logs` as a bordered `lipgloss` table.
+- `json.go` — `WriteTaskStatusJSON` serializes `lastrun status --json`:
+  per-task ID, last-run time, elapsed time, and computed status.
+- `table.go` — `WriteTaskLogs` renders `lastrun logs` as a bordered `lipgloss`
+  table.
 - `colors.go` — ANSI colour constants for the printf-style status messages.
 
 ### `tui` / `settings` / `tuiutil`
@@ -141,22 +149,25 @@ Schema migrations are intentionally minimal: `InitDB()` runs the
 `ALTER TABLE tasks ADD COLUMN duration INTEGER`, ignoring the error if the
 column already exists. There is no migration version table — the schema is small
 and changes are additive. This is the same schema the original Rust version
-used, so existing databases work unchanged.
+used, so databases created by it work unchanged.
 
 ## Data flow
 
-1. `cmd/lastrun/main.go` builds the cobra tree and executes it through `fang`.
-   The repo-root `main.go` is a thin compatibility wrapper so existing `go build .`
-   workflows keep working.
-2. `PersistentPreRunE` calls `db.ResolveDBPath` (flag → config file → XDG default), creates the parent directory if needed, opens the DB, and runs `InitDB()`.
+1. `cmd/lastrun/main.go` calls `cli.Execute`, which builds the cobra tree and
+   runs it through `fang`. The repo-root `main.go` is an identical entry point
+   so `go build .` at the repo root keeps working.
+2. `PersistentPreRunE` calls `db.ResolveDBPath` (flag → config file → XDG
+   default), then `db.Open` (which creates the parent directory if needed) and
+   `InitDB()`.
 3. The matched command calls into `model` (typed task ops) or `db` (bulk reads,
    archival, deletions).
-4. After every `done`/`update`, `autoArchive()` reads the `log_retention` setting
-   and deletes log entries older than the threshold (defaulting to 30 days).
+4. After every `done`/`update`, `autoArchive()` deletes log entries older than
+   `db.LogRetention()` (30 days by default); it does nothing when retention is
+   `off`.
 5. The result is handed to the appropriate renderer:
    - Plain printf for `start`/`done`/`check`/`clear`/`delete`/`reset`.
-   - `display.PrintTaskLogs` for `logs`.
-   - `display.PrintTaskStatusJSON` for `status --json`.
+   - `display.WriteTaskLogs` for `logs`.
+   - `display.WriteTaskStatusJSON` for `status --json`.
    - `tui.RunTUI` for `status` (default).
    - `settings.RunSettingsTUI` for `settings`.
 

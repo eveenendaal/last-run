@@ -1,14 +1,15 @@
-// Package cli defines the cobra command tree, the shared ShouldRunTask logic,
-// and the command handlers that mirror the original Rust main.rs dispatch.
+// Package cli defines the cobra command tree, the ShouldRunTask logic behind
+// `check`, and the command handlers.
 package cli
 
 import (
 	"bufio"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,14 +24,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is the release version, injected from main via ldflags.
-var Version = "dev"
+// ErrTaskDue is returned by `check` when the task is due. It is not printed;
+// it only makes the process exit non-zero.
+var ErrTaskDue = errors.New("task is due")
 
-// Execute wires the cobra command tree to the CLI entrypoint.
+// Execute runs the CLI with the given release version.
 func Execute(version string) error {
-	Version = version
-	root := NewRootCmd()
-	return fang.Execute(context.Background(), root, fang.WithVersion(version))
+	app := &appContext{}
+	defer app.close()
+	return fang.Execute(context.Background(), newRootCmd(app, version),
+		fang.WithVersion(version),
+		fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+			if !errors.Is(err, ErrTaskDue) {
+				fang.DefaultErrorHandler(w, styles, err)
+			}
+		}),
+	)
 }
 
 // appContext carries the shared database handle and global flags through the
@@ -39,10 +48,25 @@ type appContext struct {
 	db     *sql.DB
 	dbPath string
 	quiet  bool
+	out    io.Writer
 }
 
-// ShouldRunTask reports whether a task is due and a human-readable explanation,
-// shared by the `check` command and the status TUI's colouring.
+func (a *appContext) close() {
+	if a.db != nil {
+		_ = a.db.Close()
+		a.db = nil
+	}
+}
+
+// printf writes a formatted message unless --quiet was given.
+func (a *appContext) printf(format string, args ...any) {
+	if !a.quiet {
+		fmt.Fprintf(a.out, format, args...)
+	}
+}
+
+// ShouldRunTask reports whether a task last run at lastRun is due under the
+// given threshold, along with a human-readable explanation.
 func ShouldRunTask(lastRun time.Time, duration time.Duration) (bool, string) {
 	timeSince := time.Now().UTC().Sub(lastRun)
 
@@ -58,51 +82,37 @@ func ShouldRunTask(lastRun time.Time, duration time.Duration) (bool, string) {
 	)
 }
 
-// NewRootCmd builds the full command tree.
-func NewRootCmd() *cobra.Command {
-	ctx := &appContext{}
-
+// newRootCmd builds the full command tree around app.
+func newRootCmd(app *appContext, version string) *cobra.Command {
 	var dbPath string
-	var quiet bool
 
 	root := &cobra.Command{
 		Use:           "lastrun",
 		Short:         "A utility to track when tasks were last run",
-		Version:       Version,
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			resolvedPath, err := db.ResolveDBPath(dbPath)
 			if err != nil {
 				return err
-			}
-			if parent := filepath.Dir(resolvedPath); parent != "" {
-				if err := os.MkdirAll(parent, 0o755); err != nil {
-					return err
-				}
 			}
 			conn, err := db.Open(resolvedPath)
 			if err != nil {
 				return err
 			}
-			if err := db.InitDB(conn); err != nil {
-				return err
-			}
-			ctx.db = conn
-			ctx.dbPath = resolvedPath
-			ctx.quiet = quiet
-			return nil
+			app.db = conn
+			app.dbPath = resolvedPath
+			app.out = cmd.OutOrStdout()
+			return db.InitDB(conn)
 		},
-		PersistentPostRunE: func(_ *cobra.Command, _ []string) error {
-			if ctx.db != nil {
-				return ctx.db.Close()
-			}
-			return nil
+		PersistentPostRun: func(_ *cobra.Command, _ []string) {
+			app.close()
 		},
 	}
 
 	root.PersistentFlags().StringVar(&dbPath, "db-path", os.Getenv("LASTRUN_DB_PATH"), "Path to the database file")
-	root.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output messages")
+	root.PersistentFlags().BoolVarP(&app.quiet, "quiet", "q", false, "Suppress output messages")
 
 	root.AddGroup(
 		&cobra.Group{ID: "workflow", Title: "Daily workflow:"},
@@ -112,117 +122,105 @@ func NewRootCmd() *cobra.Command {
 	)
 
 	root.AddCommand(
-		newStartCmd(ctx),
-		newUpdateCmd(ctx),
-		newDoneCmd(ctx),
-		newCheckCmd(ctx),
-		newStatusCmd(ctx),
-		newLogsCmd(ctx),
-		newArchiveCmd(ctx),
-		newSetRetentionCmd(ctx),
-		newClearCmd(ctx),
-		newDeleteCmd(ctx),
-		newResetCmd(ctx),
-		newSettingsCmd(ctx),
+		newStartCmd(app),
+		newDoneCmd(app),
+		newCheckCmd(app),
+		newStatusCmd(app),
+		newLogsCmd(app),
+		newArchiveCmd(app),
+		newSetRetentionCmd(app),
+		newClearCmd(app),
+		newDeleteCmd(app),
+		newResetCmd(app),
+		newSettingsCmd(app),
 	)
 
 	return root
 }
 
-func newStartCmd(ctx *appContext) *cobra.Command {
+// idFlag registers the common --id/-i flag on cmd.
+func idFlag(cmd *cobra.Command, id *string, usage string) {
+	cmd.Flags().StringVarP(id, "id", "i", "", usage)
+}
+
+// ensureTask loads or creates the task, announcing a newly created one.
+func ensureTask(app *appContext, id string) (*model.Task, error) {
+	if id == "" {
+		return nil, apperr.ErrMissingTaskID
+	}
+	task, created, err := model.Ensure(app.db, id)
+	if created {
+		app.printf("No record found for task ID: %s\n", id)
+	}
+	return task, err
+}
+
+func newStartCmd(app *appContext) *cobra.Command {
 	var id string
 	cmd := &cobra.Command{
 		Use:     "start",
 		Short:   "Start a task",
 		GroupID: "workflow",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if id == "" {
-				return apperr.ErrMissingTaskID
-			}
-			task, err := model.Ensure(ctx.db, id, ctx.quiet)
+			task, err := ensureTask(app, id)
 			if err != nil {
 				return err
 			}
 			now := time.Now().UTC()
 			task.StartTime = &now
 			task.LastRun = nil
-			if err := task.Update(ctx.db); err != nil {
+			if err := task.Update(app.db); err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				fmt.Printf("%s%sTask %s%s%s started at %s%s%s\n",
-					display.BOLD, display.GREEN, display.WHITE, task.ID, display.GREEN,
-					display.WHITE, format.FormatDatetime(*task.StartTime), display.RESET)
-			}
+			app.printf("%s%sTask %s%s%s started at %s%s%s\n",
+				display.BOLD, display.GREEN, display.WHITE, task.ID, display.GREEN,
+				display.WHITE, format.FormatDatetime(now), display.RESET)
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to start")
+	idFlag(cmd, &id, "Task ID to start")
 	return cmd
 }
 
-func runDone(ctx *appContext, id string) error {
-	if id == "" {
-		return apperr.ErrMissingTaskID
-	}
-	task, err := model.Ensure(ctx.db, id, ctx.quiet)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	task.LastRun = &now
-	if err := task.Update(ctx.db); err != nil {
-		return err
-	}
-
-	elapsedMsg := ""
-	if task.StartTime != nil {
-		elapsed := format.FormatDuration(now.Sub(*task.StartTime))
-		elapsedMsg = fmt.Sprintf("%s. Elapsed time: %s%s%s", display.GREEN, display.WHITE, elapsed, display.GREEN)
-	}
-
-	if !ctx.quiet {
-		fmt.Printf("%s%sTask %s%s%s finished at %s%s%s%s\n",
-			display.BOLD, display.GREEN, display.WHITE, task.ID, display.GREEN,
-			display.WHITE, format.FormatDatetime(*task.LastRun), elapsedMsg, display.RESET)
-	}
-
-	return autoArchive(ctx)
-}
-
-func newUpdateCmd(ctx *appContext) *cobra.Command {
-	var id string
-	cmd := &cobra.Command{
-		Use:     "update",
-		Short:   "Update a task's last run time",
-		GroupID: "workflow",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return runDone(ctx, id)
-		},
-	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to update")
-	return cmd
-}
-
-func newDoneCmd(ctx *appContext) *cobra.Command {
+func newDoneCmd(app *appContext) *cobra.Command {
 	var id string
 	cmd := &cobra.Command{
 		Use:     "done",
-		Short:   "Synonym for update",
+		Aliases: []string{"update"},
+		Short:   "Mark a task as done, recording its last run time (alias: update)",
 		GroupID: "workflow",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runDone(ctx, id)
+			task, err := ensureTask(app, id)
+			if err != nil {
+				return err
+			}
+			now := time.Now().UTC()
+			task.LastRun = &now
+			if err := task.Update(app.db); err != nil {
+				return err
+			}
+
+			elapsedMsg := ""
+			if task.StartTime != nil {
+				elapsedMsg = fmt.Sprintf("%s. Elapsed time: %s%s%s", display.GREEN, display.WHITE,
+					format.FormatDuration(now.Sub(*task.StartTime)), display.GREEN)
+			}
+			app.printf("%s%sTask %s%s%s finished at %s%s%s%s\n",
+				display.BOLD, display.GREEN, display.WHITE, task.ID, display.GREEN,
+				display.WHITE, format.FormatDatetime(now), elapsedMsg, display.RESET)
+
+			return autoArchive(app)
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to mark as done")
+	idFlag(cmd, &id, "Task ID to mark as done")
 	return cmd
 }
 
-func newCheckCmd(ctx *appContext) *cobra.Command {
+func newCheckCmd(app *appContext) *cobra.Command {
 	var id, duration string
 	cmd := &cobra.Command{
 		Use:     "check",
-		Short:   "Check if a task is due to run",
+		Short:   "Check if a task is due to run (exits 1 when due)",
 		GroupID: "workflow",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if id == "" {
@@ -233,53 +231,42 @@ func newCheckCmd(ctx *appContext) *cobra.Command {
 				return apperr.NewDurationParseError(err.Error())
 			}
 
-			task, err := model.Select(ctx.db, id)
+			task, err := model.Select(app.db, id)
 			if err != nil {
 				return err
 			}
-			if task == nil {
-				if !ctx.quiet {
-					fmt.Printf("%s%sTask %s%s%s does not exist yet. It is considered due.%s\n",
-						display.BOLD, display.RED, display.WHITE, id, display.RED, display.RESET)
-				}
-				os.Exit(1)
+			switch {
+			case task == nil:
+				app.printf("%s%sTask %s%s%s does not exist yet. It is considered due.%s\n",
+					display.BOLD, display.RED, display.WHITE, id, display.RED, display.RESET)
+				return ErrTaskDue
+			case task.LastRun == nil:
+				app.printf("%s%sTask %s%s%s has no recorded last run. It is considered due.%s\n",
+					display.BOLD, display.RED, display.WHITE, task.ID, display.RED, display.RESET)
+				return ErrTaskDue
 			}
 
-			shouldExitDue := false
-			if task.LastRun != nil {
-				shouldRun, message := ShouldRunTask(*task.LastRun, dur)
-				if !ctx.quiet {
-					color := display.GREEN
-					if shouldRun {
-						color = display.RED
-					}
-					fmt.Printf("%s%s%s%s\n", display.BOLD, color, message, display.RESET)
-				}
-				if err := db.UpdateTaskDuration(ctx.db, task.ID, int64(dur/time.Second)); err != nil {
-					return err
-				}
-				shouldExitDue = shouldRun
-			} else {
-				if !ctx.quiet {
-					fmt.Printf("%s%sTask %s%s%s has no recorded last run. It is considered due.%s\n",
-						display.BOLD, display.RED, display.WHITE, task.ID, display.RED, display.RESET)
-				}
-				shouldExitDue = true
+			shouldRun, message := ShouldRunTask(*task.LastRun, dur)
+			color := display.GREEN
+			if shouldRun {
+				color = display.RED
 			}
-
-			if shouldExitDue {
-				closeDB(ctx)
-				os.Exit(1)
+			app.printf("%s%s%s%s\n", display.BOLD, color, message, display.RESET)
+			if err := db.UpdateTaskDuration(app.db, task.ID, int64(dur/time.Second)); err != nil {
+				return err
+			}
+			if shouldRun {
+				return ErrTaskDue
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to check")
+	idFlag(cmd, &id, "Task ID to check")
 	cmd.Flags().StringVarP(&duration, "duration", "d", "24h", "Duration threshold (e.g., 24h, 7d)")
 	return cmd
 }
 
-func newStatusCmd(ctx *appContext) *cobra.Command {
+func newStatusCmd(app *appContext) *cobra.Command {
 	var id, sort string
 	var jsonOut bool
 	cmd := &cobra.Command{
@@ -287,31 +274,27 @@ func newStatusCmd(ctx *appContext) *cobra.Command {
 		Short:   "Display current status of all tasks",
 		GroupID: "workflow",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			idPtr := optStr(id)
 			if jsonOut {
-				tasks, err := db.GetAllTasks(ctx.db, idPtr)
-				if err != nil {
+				tasks, err := db.GetAllTasks(app.db, optStr(id))
+				if err != nil || app.quiet {
 					return err
 				}
-				if !ctx.quiet {
-					display.PrintTaskStatusJSON(tasks)
-				}
-				return nil
+				return display.WriteTaskStatusJSON(app.out, tasks, time.Now().UTC())
 			}
 			sortCol, err := parseSortColumn(sort)
 			if err != nil {
 				return err
 			}
-			return tui.RunTUI(ctx.db, idPtr, sortCol)
+			return tui.RunTUI(app.db, optStr(id), sortCol)
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Filter tasks by ID")
+	idFlag(cmd, &id, "Filter tasks by ID")
 	cmd.Flags().StringVarP(&sort, "sort", "s", "last-run", "Column to sort by (task, status, duration, elapsed, last-run)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output status in JSON format")
 	return cmd
 }
 
-func newLogsCmd(ctx *appContext) *cobra.Command {
+func newLogsCmd(app *appContext) *cobra.Command {
 	var id string
 	var limit int
 	cmd := &cobra.Command{
@@ -319,135 +302,118 @@ func newLogsCmd(ctx *appContext) *cobra.Command {
 		Short:   "Display execution logs for tasks",
 		GroupID: "logs",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			logs, err := db.GetTaskLogs(ctx.db, optStr(id), limit)
+			logs, err := db.GetTaskLogs(app.db, optStr(id), limit)
 			if err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				display.PrintTaskLogs(logs)
+			if !app.quiet {
+				display.WriteTaskLogs(app.out, logs)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().IntVarP(&limit, "limit", "l", 20, "Limit number of logs to show (0 for all)")
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Filter logs by task ID")
+	idFlag(cmd, &id, "Filter logs by task ID")
 	return cmd
 }
 
-func newArchiveCmd(ctx *appContext) *cobra.Command {
+func newArchiveCmd(app *appContext) *cobra.Command {
 	var olderThan, id string
 	var yes bool
 	cmd := &cobra.Command{
 		Use:     "archive",
 		Short:   "Delete log entries older than a specified period (defaults to the stored retention setting, or 30d)",
 		GroupID: "logs",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			var olderThanStr string
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			var duration time.Duration
 			if olderThan != "" {
 				d, err := format.ParseDuration(olderThan)
 				if err != nil {
 					return apperr.NewDurationParseError(err.Error())
 				}
-				olderThanStr = olderThan
 				duration = d
 			} else {
-				seconds, ok, err := db.GetLogRetentionSeconds(ctx.db)
+				d, err := db.LogRetention(app.db)
 				if err != nil {
 					return err
 				}
-				if !ok {
-					seconds = 30 * 24 * 3600
+				if d == 0 { // auto-cleanup is off; a manual archive still uses the default
+					d = db.DefaultLogRetention
 				}
-				olderThanStr = fmt.Sprintf("%dd", seconds/(24*3600))
-				duration = time.Duration(seconds) * time.Second
+				duration = d
+				olderThan = fmt.Sprintf("%dd", int64(d/(24*time.Hour)))
 			}
 
 			cutoff := time.Now().UTC().Add(-duration)
 			idPtr := optStr(id)
 
-			count, err := db.CountOldLogs(ctx.db, cutoff, idPtr)
+			count, err := db.CountOldLogs(app.db, cutoff, idPtr)
 			if err != nil {
 				return err
 			}
-
 			if count == 0 {
-				if !ctx.quiet {
-					fmt.Printf("%s%sNo log entries found older than %s.%s\n",
-						display.BOLD, display.GREEN, olderThanStr, display.RESET)
-				}
+				app.printf("%s%sNo log entries found older than %s.%s\n",
+					display.BOLD, display.GREEN, olderThan, display.RESET)
 				return nil
 			}
 
-			if !ctx.quiet {
-				scope := " across all tasks"
-				if id != "" {
-					scope = fmt.Sprintf(" for task %s%s%s", display.WHITE, id, display.GREEN)
-				}
-				fmt.Printf("%s%sArchive logs%s%s\n", display.BOLD, display.GREEN, scope, display.RESET)
-				fmt.Printf("  Keeping entries from: %s%s%s\n", display.WHITE, cutoff.UTC().Format("2006-01-02"), display.RESET)
-				fmt.Printf("  Entries to delete:    %s%s%d%s\n", display.WHITE, display.BOLD, count, display.RESET)
-				fmt.Println()
+			scope := " across all tasks"
+			if id != "" {
+				scope = fmt.Sprintf(" for task %s%s%s", display.WHITE, id, display.GREEN)
 			}
+			app.printf("%s%sArchive logs%s%s\n", display.BOLD, display.GREEN, scope, display.RESET)
+			app.printf("  Keeping entries from: %s%s%s\n", display.WHITE, cutoff.Format("2006-01-02"), display.RESET)
+			app.printf("  Entries to delete:    %s%s%d%s\n\n", display.WHITE, display.BOLD, count, display.RESET)
 
-			confirmed := yes
-			if !confirmed {
-				fmt.Printf("Permanently delete %d log %s? [y/N]: ", count, plural(count))
-				reader := bufio.NewReader(os.Stdin)
-				input, _ := reader.ReadString('\n')
+			if !yes {
+				fmt.Fprintf(app.out, "Permanently delete %d log %s? [y/N]: ", count, plural(count))
+				input, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 				input = strings.ToLower(strings.TrimSpace(input))
-				confirmed = input == "y" || input == "yes"
+				if input != "y" && input != "yes" {
+					app.printf("%sCancelled.%s\n", display.RED, display.RESET)
+					return nil
+				}
 			}
 
-			if confirmed {
-				deleted, err := db.DeleteOldLogs(ctx.db, cutoff, idPtr)
-				if err != nil {
-					return err
-				}
-				if !ctx.quiet {
-					fmt.Printf("%s%sDeleted %d log %s.%s\n",
-						display.BOLD, display.GREEN, deleted, plural(deleted), display.RESET)
-				}
-			} else if !ctx.quiet {
-				fmt.Printf("%sCancelled.%s\n", display.RED, display.RESET)
+			deleted, err := db.DeleteOldLogs(app.db, cutoff, idPtr)
+			if err != nil {
+				return err
 			}
+			app.printf("%s%sDeleted %d log %s.%s\n",
+				display.BOLD, display.GREEN, deleted, plural(deleted), display.RESET)
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&olderThan, "older-than", "o", "", "How far back to keep logs (e.g. 30d, 2w, 3m, 24h). Entries older than this are deleted.")
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Limit archiving to a specific task ID (default: all tasks)")
+	idFlag(cmd, &id, "Limit archiving to a specific task ID (default: all tasks)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip the confirmation prompt and delete immediately")
 	return cmd
 }
 
-func newSetRetentionCmd(ctx *appContext) *cobra.Command {
-	cmd := &cobra.Command{
+func newSetRetentionCmd(app *appContext) *cobra.Command {
+	return &cobra.Command{
 		Use:     "set-retention <duration>",
 		Short:   "Set the log retention period for automatic cleanup (e.g. 30d, 2w, 3m, 24h). Pass \"off\" to disable.",
 		GroupID: "logs",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			normalized := strings.TrimSpace(args[0])
-			disabled := strings.EqualFold(normalized, "off") || normalized == "0"
-			if err := db.SetLogRetention(ctx.db, normalized); err != nil {
+			value := strings.TrimSpace(args[0])
+			if err := db.SetLogRetention(app.db, value); err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				if disabled {
-					fmt.Printf("%s%sLog retention disabled — auto-cleanup turned off.%s\n",
-						display.BOLD, display.GREEN, display.RESET)
-				} else {
-					fmt.Printf("%s%sLog retention set to %s%s%s. Old logs will be auto-cleaned on each `done`/`update`.%s\n",
-						display.BOLD, display.GREEN, display.WHITE, normalized, display.GREEN, display.RESET)
-				}
+			if db.IsRetentionOff(value) {
+				app.printf("%s%sLog retention disabled — auto-cleanup turned off.%s\n",
+					display.BOLD, display.GREEN, display.RESET)
+			} else {
+				app.printf("%s%sLog retention set to %s%s%s. Old logs will be auto-cleaned on each `done`/`update`.%s\n",
+					display.BOLD, display.GREEN, display.WHITE, value, display.GREEN, display.RESET)
 			}
 			return nil
 		},
 	}
-	return cmd
 }
 
-func newClearCmd(ctx *appContext) *cobra.Command {
+func newClearCmd(app *appContext) *cobra.Command {
 	var id string
 	cmd := &cobra.Command{
 		Use:     "clear",
@@ -457,34 +423,30 @@ func newClearCmd(ctx *appContext) *cobra.Command {
 			if id == "" {
 				return apperr.ErrMissingTaskID
 			}
-			task, err := model.Select(ctx.db, id)
+			task, err := model.Select(app.db, id)
 			if err != nil {
 				return err
 			}
 			if task == nil {
-				if !ctx.quiet {
-					fmt.Printf("%s%sTask %s%s%s does not exist.%s\n",
-						display.BOLD, display.RED, display.WHITE, id, display.RED, display.RESET)
-				}
+				app.printf("%s%sTask %s%s%s does not exist.%s\n",
+					display.BOLD, display.RED, display.WHITE, id, display.RED, display.RESET)
 				return nil
 			}
 			task.LastRun = nil
 			task.StartTime = nil
-			if err := task.Update(ctx.db); err != nil {
+			if err := task.Update(app.db); err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				fmt.Printf("%s%sTask %s%s%s cleared (start and done values reset).%s\n",
-					display.BOLD, display.GREEN, display.WHITE, id, display.GREEN, display.RESET)
-			}
+			app.printf("%s%sTask %s%s%s cleared (start and done values reset).%s\n",
+				display.BOLD, display.GREEN, display.WHITE, id, display.GREEN, display.RESET)
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to clear")
+	idFlag(cmd, &id, "Task ID to clear")
 	return cmd
 }
 
-func newDeleteCmd(ctx *appContext) *cobra.Command {
+func newDeleteCmd(app *appContext) *cobra.Command {
 	var id string
 	cmd := &cobra.Command{
 		Use:     "delete",
@@ -494,96 +456,84 @@ func newDeleteCmd(ctx *appContext) *cobra.Command {
 			if id == "" {
 				return apperr.ErrMissingTaskID
 			}
-			logsDeleted, err := db.DeleteTaskLogs(ctx.db, id)
+			logsDeleted, err := db.DeleteTaskLogs(app.db, id)
 			if err != nil {
 				return err
 			}
-			taskDeleted, err := db.DeleteTask(ctx.db, id)
+			taskDeleted, err := db.DeleteTask(app.db, id)
 			if err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				if taskDeleted > 0 {
-					fmt.Printf("%s%sTask %s%s%s deleted. %d log entries removed.%s\n",
-						display.BOLD, display.GREEN, display.WHITE, id, display.GREEN, logsDeleted, display.RESET)
-				} else {
-					fmt.Printf("%s%sNo task found with ID: %s%s%s. %d log entries removed.%s\n",
-						display.BOLD, display.RED, display.WHITE, id, display.RED, logsDeleted, display.RESET)
-				}
+			if taskDeleted > 0 {
+				app.printf("%s%sTask %s%s%s deleted. %d log entries removed.%s\n",
+					display.BOLD, display.GREEN, display.WHITE, id, display.GREEN, logsDeleted, display.RESET)
+			} else {
+				app.printf("%s%sNo task found with ID: %s%s%s. %d log entries removed.%s\n",
+					display.BOLD, display.RED, display.WHITE, id, display.RED, logsDeleted, display.RESET)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&id, "id", "i", "", "Task ID to delete")
+	idFlag(cmd, &id, "Task ID to delete")
 	return cmd
 }
 
-func newResetCmd(ctx *appContext) *cobra.Command {
+func newResetCmd(app *appContext) *cobra.Command {
 	return &cobra.Command{
 		Use:     "reset",
 		Short:   "Reset the tasks database",
 		GroupID: "tasks",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := db.CleanDB(ctx.db); err != nil {
+			if err := db.CleanDB(app.db); err != nil {
 				return err
 			}
-			if !ctx.quiet {
-				fmt.Printf("%s%sTasks table has been rebuilt.%s\n", display.BOLD, display.GREEN, display.RESET)
-			}
+			app.printf("%s%sTasks table has been rebuilt.%s\n", display.BOLD, display.GREEN, display.RESET)
 			return nil
 		},
 	}
 }
 
-func newSettingsCmd(ctx *appContext) *cobra.Command {
+func newSettingsCmd(app *appContext) *cobra.Command {
 	return &cobra.Command{
 		Use:     "settings",
 		Short:   "Interactively view and edit settings (e.g. log retention, DB location)",
 		GroupID: "config",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return settings.RunSettingsTUI(ctx.db, ctx.dbPath)
+			return settings.RunSettingsTUI(app.db, app.dbPath)
 		},
 	}
 }
 
-func autoArchive(ctx *appContext) error {
-	seconds, ok, err := db.GetLogRetentionSeconds(ctx.db)
+// autoArchive deletes log entries older than the configured retention period
+// (DefaultLogRetention when unset). It does nothing when retention is off.
+func autoArchive(app *appContext) error {
+	retention, err := db.LogRetention(app.db)
+	if err != nil || retention == 0 {
+		return err
+	}
+	deleted, err := db.DeleteOldLogs(app.db, time.Now().UTC().Add(-retention), nil)
 	if err != nil {
 		return err
 	}
-	retention := int64(30 * 24 * 3600)
-	if ok {
-		retention = seconds
-	}
-	if retention <= 0 {
-		return nil
-	}
-	cutoff := time.Now().UTC().Add(-time.Duration(retention) * time.Second)
-	deleted, err := db.DeleteOldLogs(ctx.db, cutoff, nil)
-	if err != nil {
-		return err
-	}
-	if !ctx.quiet && deleted > 0 {
-		fmt.Printf("%sAuto-cleaned %d old log %s.%s\n", display.GREEN, deleted, plural(deleted), display.RESET)
+	if deleted > 0 {
+		app.printf("%sAuto-cleaned %d old log %s.%s\n", display.GREEN, deleted, plural(deleted), display.RESET)
 	}
 	return nil
 }
 
+var sortColumns = map[string]tui.SortCol{
+	"task":     tui.SortTask,
+	"status":   tui.SortStatus,
+	"duration": tui.SortDuration,
+	"elapsed":  tui.SortElapsed,
+	"last-run": tui.SortLastRun,
+}
+
 func parseSortColumn(s string) (tui.SortCol, error) {
-	switch s {
-	case "task":
-		return tui.SortTask, nil
-	case "status":
-		return tui.SortStatus, nil
-	case "duration":
-		return tui.SortDuration, nil
-	case "elapsed":
-		return tui.SortElapsed, nil
-	case "last-run":
-		return tui.SortLastRun, nil
-	default:
-		return tui.SortLastRun, fmt.Errorf("invalid sort column %q (expected task, status, duration, elapsed, last-run)", s)
+	if col, ok := sortColumns[s]; ok {
+		return col, nil
 	}
+	return tui.SortLastRun, fmt.Errorf("invalid sort column %q (expected task, status, duration, elapsed, last-run)", s)
 }
 
 func optStr(s string) *string {
@@ -598,10 +548,4 @@ func plural(n int64) string {
 		return "entry"
 	}
 	return "entries"
-}
-
-func closeDB(ctx *appContext) {
-	if ctx.db != nil {
-		_ = ctx.db.Close()
-	}
 }

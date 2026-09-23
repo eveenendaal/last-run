@@ -1,10 +1,11 @@
-// Package db owns the SQLite connection, schema, and all typed CRUD helpers,
-// mirroring the original Rust db.rs. It uses the pure-Go modernc.org/sqlite
-// driver so binaries are statically linked and cross-compile without cgo.
+// Package db owns the SQLite connection, schema, and all typed CRUD helpers.
+// It uses the pure-Go modernc.org/sqlite driver so binaries are statically
+// linked and cross-compile without cgo.
 package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +26,44 @@ type TaskStatus struct {
 	LastRun   *time.Time
 	StartTime *time.Time
 	Duration  *int64
+}
+
+// Task status values reported by TaskStatus.Status.
+const (
+	StatusOK      = "ok"
+	StatusRunning = "running"
+	StatusDue     = "due"
+	StatusUnknown = "unknown"
+)
+
+// Status classifies the task at time now: "running" if started but not
+// finished, "unknown" if it has never finished, "due" if its last run is older
+// than its stored check duration, and "ok" otherwise.
+func (t TaskStatus) Status(now time.Time) string {
+	switch {
+	case t.StartTime != nil && t.LastRun == nil:
+		return StatusRunning
+	case t.LastRun == nil:
+		return StatusUnknown
+	case t.Duration != nil && now.Sub(*t.LastRun) > time.Duration(*t.Duration)*time.Second:
+		return StatusDue
+	default:
+		return StatusOK
+	}
+}
+
+// Elapsed returns the run time of the task: the time since start for a running
+// task, or start-to-finish for a completed one. ok is false when there is no
+// meaningful value (never started, or the start is newer than the last run).
+func (t TaskStatus) Elapsed(now time.Time) (d time.Duration, ok bool) {
+	switch {
+	case t.StartTime != nil && t.LastRun == nil:
+		return now.Sub(*t.StartTime), true
+	case t.StartTime != nil && t.StartTime.Before(*t.LastRun):
+		return t.LastRun.Sub(*t.StartTime), true
+	default:
+		return 0, false
+	}
 }
 
 // LogRow is a single task_log entry with a parsed end time.
@@ -48,16 +87,22 @@ type Setting struct {
 	Value string
 }
 
+// DefaultLogRetention is how long log entries are kept when no log_retention
+// setting has been stored.
+const DefaultLogRetention = 30 * 24 * time.Hour
+
+const createTasksTable = `CREATE TABLE IF NOT EXISTS tasks (
+	id TEXT PRIMARY KEY,
+	last_run TEXT,
+	start_time TEXT,
+	duration INTEGER
+)`
+
 // InitDB creates the schema idempotently and ensures the `duration` column
 // exists on older databases.
 func InitDB(db *sql.DB) error {
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS tasks (
-			id TEXT PRIMARY KEY,
-			last_run TEXT,
-			start_time TEXT,
-			duration INTEGER
-		)`,
+		createTasksTable,
 		`CREATE TABLE IF NOT EXISTS task_log (
 			id TEXT,
 			end_time TEXT,
@@ -82,40 +127,26 @@ func InitDB(db *sql.DB) error {
 	return nil
 }
 
-// Open opens (or creates) a SQLite database at the given path. The connection
-// pool is capped at one to avoid "database is locked" contention from within
-// the same process. A 5-second busy timeout and WAL journal mode handle
-// cross-process contention gracefully.
+// Open opens (or creates) a SQLite database at the given path, creating the
+// parent directory if needed. The connection pool is capped at one to avoid
+// "database is locked" contention from within the same process. A 5-second
+// busy timeout and WAL journal mode handle cross-process contention gracefully.
 func Open(path string) (*sql.DB, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
 	database, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	database.SetMaxOpenConns(1)
-	if _, err := database.Exec("PRAGMA busy_timeout = 5000"); err != nil {
-		return nil, err
-	}
-	if _, err := database.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		return nil, err
-	}
-	return database, nil
-}
-
-// GetFileBasedConnection resolves the database path (honoring an override),
-// ensures the parent directory exists, and opens the connection.
-func GetFileBasedConnection(dbPathOverride string) (*sql.DB, error) {
-	dbPath, err := ResolveDBPath(dbPathOverride)
-	if err != nil {
-		return nil, err
-	}
-
-	if parent := filepath.Dir(dbPath); parent != "" {
-		if err := os.MkdirAll(parent, 0o755); err != nil {
+	for _, pragma := range []string{"PRAGMA busy_timeout = 5000", "PRAGMA journal_mode = WAL"} {
+		if _, err := database.Exec(pragma); err != nil {
+			_ = database.Close()
 			return nil, err
 		}
 	}
-
-	return Open(dbPath)
+	return database, nil
 }
 
 // ResolveDBPath returns the database path to use, following this priority:
@@ -149,10 +180,8 @@ func defaultDBPath() (string, error) {
 // directory is created if needed. Returns an error if dstPath already exists;
 // remove the file first if you need to overwrite.
 func CopyDatabase(srcDB *sql.DB, dstPath string) error {
-	if parent := filepath.Dir(dstPath); parent != "" {
-		if err := os.MkdirAll(parent, 0o755); err != nil {
-			return err
-		}
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return err
 	}
 	if _, err := os.Stat(dstPath); err == nil {
 		return fmt.Errorf("destination already exists: %s", dstPath)
@@ -186,22 +215,13 @@ func SetCustomDBPath(path string) error {
 // GetTaskLogs returns recent log entries, optionally filtered by task ID. A
 // limit of 0 means no limit. Entries are ordered newest first.
 func GetTaskLogs(db *sql.DB, taskID *string, limit int) ([]LogRow, error) {
-	query := "SELECT id, end_time, elapsed_time FROM task_log"
-	if taskID != nil {
-		query += " WHERE id = ?"
-	}
-	query += " ORDER BY end_time DESC"
+	where, args := idFilter("WHERE", taskID)
+	query := "SELECT id, end_time, elapsed_time FROM task_log" + where + " ORDER BY end_time DESC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	var rows *sql.Rows
-	var err error
-	if taskID != nil {
-		rows, err = db.Query(query, *taskID)
-	} else {
-		rows, err = db.Query(query)
-	}
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +236,7 @@ func GetTaskLogs(db *sql.DB, taskID *string, limit int) ([]LogRow, error) {
 		}
 		endTime, err := time.Parse(time.RFC3339, endTimeStr)
 		if err != nil {
-			return nil, fmt.Errorf("Date parse error: %w", err)
+			return nil, fmt.Errorf("date parse error: %w", err)
 		}
 		logs = append(logs, LogRow{ID: id, EndTime: endTime.UTC(), ElapsedMs: elapsed})
 	}
@@ -225,19 +245,8 @@ func GetTaskLogs(db *sql.DB, taskID *string, limit int) ([]LogRow, error) {
 
 // GetAllTasks returns all tasks (optionally filtered by ID), ordered by ID.
 func GetAllTasks(db *sql.DB, taskID *string) ([]TaskStatus, error) {
-	query := "SELECT id, last_run, start_time, duration FROM tasks"
-	if taskID != nil {
-		query += " WHERE id = ?"
-	}
-	query += " ORDER BY id"
-
-	var rows *sql.Rows
-	var err error
-	if taskID != nil {
-		rows, err = db.Query(query, *taskID)
-	} else {
-		rows, err = db.Query(query)
-	}
+	where, args := idFilter("WHERE", taskID)
+	rows, err := db.Query("SELECT id, last_run, start_time, duration FROM tasks"+where+" ORDER BY id", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -251,12 +260,10 @@ func GetAllTasks(db *sql.DB, taskID *string) ([]TaskStatus, error) {
 		if err := rows.Scan(&id, &lastRun, &startTime, &duration); err != nil {
 			return nil, err
 		}
-		t := TaskStatus{ID: id}
-		if lastRun.Valid {
-			t.LastRun = format.ParseRFC3339Opt(lastRun.String)
-		}
-		if startTime.Valid {
-			t.StartTime = format.ParseRFC3339Opt(startTime.String)
+		t := TaskStatus{
+			ID:        id,
+			LastRun:   format.ParseRFC3339Opt(lastRun.String),
+			StartTime: format.ParseRFC3339Opt(startTime.String),
 		}
 		if duration.Valid {
 			d := duration.Int64
@@ -273,12 +280,7 @@ func CleanDB(db *sql.DB) error {
 	if _, err := db.Exec("DROP TABLE IF EXISTS tasks"); err != nil {
 		return err
 	}
-	_, err := db.Exec(`CREATE TABLE tasks (
-		id TEXT PRIMARY KEY,
-		last_run TEXT,
-		start_time TEXT,
-		duration INTEGER
-	)`)
+	_, err := db.Exec(createTasksTable)
 	return err
 }
 
@@ -339,40 +341,36 @@ func DeleteTask(db *sql.DB, taskID string) (int64, error) {
 
 // CountOldLogs counts log entries older than cutoff, optionally for one task.
 func CountOldLogs(db *sql.DB, cutoff time.Time, taskID *string) (int64, error) {
-	cutoffStr := format.FormatRFC3339(cutoff)
+	where, args := olderThan(cutoff, taskID)
 	var count int64
-	var err error
-	if taskID != nil {
-		err = db.QueryRow(
-			"SELECT COUNT(*) FROM task_log WHERE end_time < ? AND id = ?",
-			cutoffStr, *taskID,
-		).Scan(&count)
-	} else {
-		err = db.QueryRow(
-			"SELECT COUNT(*) FROM task_log WHERE end_time < ?",
-			cutoffStr,
-		).Scan(&count)
-	}
+	err := db.QueryRow("SELECT COUNT(*) FROM task_log"+where, args...).Scan(&count)
 	return count, err
 }
 
 // DeleteOldLogs deletes log entries older than cutoff, optionally for one task.
 func DeleteOldLogs(db *sql.DB, cutoff time.Time, taskID *string) (int64, error) {
-	cutoffStr := format.FormatRFC3339(cutoff)
-	var res sql.Result
-	var err error
-	if taskID != nil {
-		res, err = db.Exec(
-			"DELETE FROM task_log WHERE end_time < ? AND id = ?",
-			cutoffStr, *taskID,
-		)
-	} else {
-		res, err = db.Exec("DELETE FROM task_log WHERE end_time < ?", cutoffStr)
-	}
+	where, args := olderThan(cutoff, taskID)
+	res, err := db.Exec("DELETE FROM task_log"+where, args...)
 	if err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// idFilter returns an " <keyword> id = ?" clause and its argument when taskID
+// is set, or nothing when it is nil.
+func idFilter(keyword string, taskID *string) (string, []any) {
+	if taskID == nil {
+		return "", nil
+	}
+	return " " + keyword + " id = ?", []any{*taskID}
+}
+
+// olderThan builds the WHERE clause selecting log entries that ended before
+// cutoff, optionally restricted to one task.
+func olderThan(cutoff time.Time, taskID *string) (string, []any) {
+	and, idArgs := idFilter("AND", taskID)
+	return " WHERE end_time < ?" + and, append([]any{format.FormatRFC3339(cutoff)}, idArgs...)
 }
 
 // UpdateTaskDuration stores the most recent `check --duration` (in seconds).
@@ -386,7 +384,7 @@ func GetSetting(db *sql.DB, key string) (string, bool, error) {
 	var value string
 	err := db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", false, nil
 		}
 		return "", false, err
@@ -423,35 +421,39 @@ func GetAllSettings(db *sql.DB) ([]Setting, error) {
 	return settings, rows.Err()
 }
 
-// GetLogRetentionSeconds reads log_retention and returns it in seconds. The
-// second return value is false when the setting is unset, "off", "0", or an
-// invalid duration string.
-func GetLogRetentionSeconds(db *sql.DB) (int64, bool, error) {
-	value, ok, err := GetSetting(db, "log_retention")
-	if err != nil {
-		return 0, false, err
+// LogRetention returns the effective log retention period. It is
+// DefaultLogRetention when the setting is unset or invalid, and 0 when
+// auto-cleanup has been turned off ("off" or "0").
+func LogRetention(db *sql.DB) (time.Duration, error) {
+	value, ok, err := GetSetting(db, logRetentionKey)
+	if err != nil || !ok {
+		return DefaultLogRetention, err
 	}
-	if !ok {
-		return 0, false, nil
-	}
-	if strings.EqualFold(value, "off") || value == "0" {
-		return 0, false, nil
+	if IsRetentionOff(value) {
+		return 0, nil
 	}
 	d, err := format.ParseDuration(value)
 	if err != nil {
-		return 0, false, nil
+		return DefaultLogRetention, nil
 	}
-	return int64(d.Seconds()), true, nil
+	return d, nil
 }
 
 // SetLogRetention validates and stores the log_retention setting. "off"/"0"
 // disables auto-cleanup; any other value must be a valid duration string.
 func SetLogRetention(db *sql.DB, value string) error {
-	if strings.EqualFold(value, "off") || value == "0" {
-		return SetSetting(db, "log_retention", "off")
+	if IsRetentionOff(value) {
+		return SetSetting(db, logRetentionKey, "off")
 	}
 	if _, err := format.ParseDuration(value); err != nil {
 		return apperr.NewDurationParseError("Invalid duration, use e.g. 30d, 2w, 3m, 24h")
 	}
-	return SetSetting(db, "log_retention", value)
+	return SetSetting(db, logRetentionKey, value)
+}
+
+const logRetentionKey = "log_retention"
+
+// IsRetentionOff reports whether value disables log auto-cleanup ("off" or "0").
+func IsRetentionOff(value string) bool {
+	return strings.EqualFold(value, "off") || value == "0"
 }

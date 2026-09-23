@@ -1,14 +1,12 @@
 // Package settings implements the interactive `lastrun settings` editor using
-// Bubble Tea, replacing the original ratatui implementation. It lists settings
-// and lets the user edit them, routing log_retention through the validating
-// setter so invalid input is rejected. It also provides import/export and
-// custom database-location management.
+// Bubble Tea. It lists settings and lets the user edit them, routing
+// log_retention through the validating setter so invalid input is rejected. It
+// also provides import/export and custom database-location management.
 package settings
 
 import (
 	"database/sql"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -159,19 +157,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					// stay in editor until user provides a path
 					break
 				}
-				if err := os.MkdirAll(filepath.Dir(newVal), 0o755); err != nil {
-					m.notice = "Error: " + err.Error()
-					m.reload()
-					m.state = stateList
-					break
-				}
 				if err := db.CopyDatabase(m.db, newVal); err != nil {
-					m.notice = "Export failed: " + err.Error()
+					m.finish("Export failed: " + err.Error())
 				} else {
-					m.notice = "Exported to " + newVal
+					m.finish("Exported to " + newVal)
 				}
-				m.reload()
-				m.state = stateList
 
 			case "_import":
 				if newVal == "" {
@@ -181,21 +171,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					// File must exist to import — stay in editor.
 					break
 				}
-				if err := db.SetCustomDBPath(newVal); err != nil {
-					m.notice = "Config write failed: " + err.Error()
-				} else {
-					m.notice = "Will use " + newVal + " on next restart"
-				}
-				m.reload()
-				m.state = stateList
+				m.useDBPath(newVal, "Will use "+newVal+" on next restart")
 
 			case "db_location":
 				if newVal == "" {
 					// Empty = revert to XDG default.
-					_ = db.SetCustomDBPath("")
-					m.notice = "DB location reverted to default (restart to apply)"
-					m.reload()
-					m.state = stateList
+					m.useDBPath("", "DB location reverted to default (restart to apply)")
 				} else if newVal == m.dbPath {
 					m.state = stateList
 				} else {
@@ -228,52 +209,17 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case stateChooseAction:
 		switch key {
 		case "s", "S":
-			if !m.targetExists {
-				break
+			if m.targetExists {
+				m.useDBPath(m.pendingPath, "Will switch to existing DB at "+m.pendingPath+" on next restart")
 			}
-			if err := db.SetCustomDBPath(m.pendingPath); err != nil {
-				m.notice = "Config write failed: " + err.Error()
-			} else {
-				m.notice = "Will switch to existing DB at " + m.pendingPath + " on next restart"
-			}
-			m.pendingPath = ""
-			m.reload()
-			m.state = stateList
 
 		case "m", "M":
-			if m.targetExists {
-				// Remove existing file so VACUUM INTO can write it.
-				if err := os.Remove(m.pendingPath); err != nil {
-					m.notice = "Could not remove existing file: " + err.Error()
-					m.pendingPath = ""
-					m.reload()
-					m.state = stateList
-					break
-				}
-			}
-			if err := db.CopyDatabase(m.db, m.pendingPath); err != nil {
-				m.notice = "Migration failed: " + err.Error()
-			} else if err := db.SetCustomDBPath(m.pendingPath); err != nil {
-				m.notice = "Migrated but config write failed: " + err.Error()
-			} else {
-				m.notice = "Migrated to " + m.pendingPath + " (restart to apply)"
-			}
-			m.pendingPath = ""
-			m.reload()
-			m.state = stateList
+			m.migrate()
 
 		case "n", "N":
-			if m.targetExists {
-				break // "new" only offered when target doesn't exist
+			if !m.targetExists { // "new" only offered when target doesn't exist
+				m.useDBPath(m.pendingPath, "New empty DB will be created at "+m.pendingPath+" on next restart")
 			}
-			if err := db.SetCustomDBPath(m.pendingPath); err != nil {
-				m.notice = "Config write failed: " + err.Error()
-			} else {
-				m.notice = "New empty DB will be created at " + m.pendingPath + " on next restart"
-			}
-			m.pendingPath = ""
-			m.reload()
-			m.state = stateList
 
 		case "esc", "ctrl+c":
 			m.pendingPath = ""
@@ -281,6 +227,46 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// finish shows notice, discards any staged path, and returns to the list.
+func (m *model) finish(notice string) {
+	m.notice = notice
+	m.pendingPath = ""
+	m.reload()
+	m.state = stateList
+}
+
+// useDBPath records path as the database location for the next start ("" to
+// revert to the default) and finishes with okNotice on success.
+func (m *model) useDBPath(path, okNotice string) {
+	if err := db.SetCustomDBPath(path); err != nil {
+		m.finish("Config write failed: " + err.Error())
+		return
+	}
+	m.finish(okNotice)
+}
+
+// migrate copies the live database to the staged path (replacing any file
+// already there) and points the config at it.
+func (m *model) migrate() {
+	path := m.pendingPath
+	if m.targetExists {
+		// Remove existing file so VACUUM INTO can write it.
+		if err := os.Remove(path); err != nil {
+			m.finish("Could not remove existing file: " + err.Error())
+			return
+		}
+	}
+	if err := db.CopyDatabase(m.db, path); err != nil {
+		m.finish("Migration failed: " + err.Error())
+		return
+	}
+	if err := db.SetCustomDBPath(path); err != nil {
+		m.finish("Migrated but config write failed: " + err.Error())
+		return
+	}
+	m.finish("Migrated to " + path + " (restart to apply)")
 }
 
 // save persists the current edit buffer for non-special settings, routing

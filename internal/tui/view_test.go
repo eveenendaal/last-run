@@ -94,7 +94,7 @@ func TestViewRendersAllStates(t *testing.T) {
 
 	// History view + log-delete popup + help overlay.
 	for i, tk := range m.tasks {
-		if tk.id == "beta" { // beta has a log entry
+		if tk.ID == "beta" { // beta has a log entry
 			m.cursor = i
 		}
 	}

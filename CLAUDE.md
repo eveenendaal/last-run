@@ -8,24 +8,30 @@ are available on the
 
 ## Working Effectively
 
-Uses [Task](https://taskfile.dev). The toolchain is just Go + Task.
+Uses a small `Makefile`. The toolchain is just Go + make.
 
 ```bash
-task test                       # go test ./...
-task build                      # build dist/lastrun + lastrun.sha256 (native)
-GOOS=windows GOARCH=amd64 task build   # cross-compile for another target
-task status                     # run the status TUI
-task help                       # styled help output
-task clean                      # remove dist/
+make test                       # go test ./...
+make build                      # build dist/lastrun + lastrun.sha256 (native)
+GOOS=windows GOARCH=amd64 make build   # cross-compile for another target
+make install                    # build into $GOBIN (or $GOPATH/bin)
+make clean                      # remove dist/
+go run ./cmd/lastrun status     # run the status TUI
 ```
 
-Source lives in `cmd/lastrun/main.go` (with a thin compatibility `main.go` at the repository root) plus `internal/` packages: `cli` (cobra commands +
-`ShouldRunTask`), `config` (per-user JSON config file), `db` (SQLite schema +
-CRUD), `model` (`Task` persistence), `format` (duration/time helpers), `apperr`
-(errors), `display` (JSON + log table + ANSI colors), `tui` (Bubble Tea status
-view), `settings` (Bubble Tea settings editor with db location, import/export),
-`tuiutil` (shared TUI panels/overlays), and `version` (release bump helper).
-Architecture notes in `docs/ARCHITECTURE.md`.
+Source lives in `cmd/lastrun/main.go` (with an identical `main.go` at the
+repository root) plus `internal/` packages: `cli` (cobra commands +
+`ShouldRunTask`), `config` (per-user JSON config file), `db` (SQLite schema,
+CRUD, and the shared `TaskStatus.Status`/`Elapsed` logic), `model` (`Task`
+persistence), `format` (duration/time helpers), `apperr` (errors), `display`
+(JSON + log table + ANSI colors), `tui` (Bubble Tea status view), `settings`
+(Bubble Tea settings editor with db location, import/export), and `tuiutil`
+(shared TUI panels/overlays). Architecture notes in `docs/ARCHITECTURE.md`.
+
+CLI handlers print through `appContext.printf` (respects `--quiet`, writes to
+the command's output) so `internal/cli/cli_test.go` can drive the real command
+tree via `runCLI`. `check` signals "due" by returning `ErrTaskDue`, never
+`os.Exit`.
 
 ### Pure-Go SQLite (no cgo)
 The `modernc.org/sqlite` driver is a cgo-free, pure-Go SQLite. Binaries are
@@ -46,7 +52,7 @@ SQLite, so existing `data.db` files keep working unchanged.
 
 Releases are produced by `.github/workflows/build.yml` on push to `master`:
 
-1. `test` job (Ubuntu) runs `task test`.
+1. `test` job (Ubuntu) runs `make test`.
 2. `version` job computes the next patch version from the latest git tag (`v*`).
 3. `build` job (Ubuntu) cross-compiles every target in one loop with
    `CGO_ENABLED=0`, injecting the version via `-ldflags "-X main.version=..."`,
@@ -66,4 +72,4 @@ To add a target, add it to the `targets` list in the `build` job.
 - Dependabot is configured in `.github/dependabot.yml` (monthly Go modules +
   GitHub Actions updates, assigned to `eveenendaal`). PRs run
   `.github/workflows/test.yml`; merges are reviewed manually.
-- Always run `task test` before committing.
+- Always run `make test` before committing.

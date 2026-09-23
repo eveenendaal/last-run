@@ -310,3 +310,96 @@ func TestImportRejectsNonExistentFile(t *testing.T) {
 		t.Errorf("expected to stay in stateEdit for missing import file, got %v", m.state)
 	}
 }
+
+// TestDBLocationMigrate copies the live database to a new location and points
+// the config at it.
+func TestDBLocationMigrate(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if err := db.SetSetting(m.db, "marker", "copied"); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath := filepath.Join(t.TempDir(), "migrated.db")
+	m.cursor = 0 // db_location
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.editBuf = newPath
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.state != stateChooseAction || m.targetExists {
+		t.Fatalf("expected stateChooseAction for a new path, got %v (exists=%v)", m.state, m.targetExists)
+	}
+	if v := m.View(); !strings.Contains(v, "Change Database Location") {
+		t.Errorf("missing choice box:\n%s", v)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if m.state != stateList || !strings.Contains(m.notice, "Migrated") {
+		t.Fatalf("after migrate: state=%v notice=%q", m.state, m.notice)
+	}
+	if got, _ := db.GetCustomDBPath(); got != newPath {
+		t.Errorf("config db_path = %q, want %q", got, newPath)
+	}
+
+	copied, err := db.Open(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copied.Close()
+	if v, ok, _ := db.GetSetting(copied, "marker"); !ok || v != "copied" {
+		t.Errorf("migrated DB marker = (%q, %v), want copied", v, ok)
+	}
+}
+
+// TestDBLocationMigrateOverwritesExisting replaces a file already at the
+// target path.
+func TestDBLocationMigrateOverwritesExisting(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	existing := filepath.Join(t.TempDir(), "existing.db")
+	if err := os.WriteFile(existing, []byte("not a database"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.cursor = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.editBuf = existing
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.targetExists {
+		t.Fatal("expected targetExists for an existing file")
+	}
+
+	// "New" is not offered when the file exists.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if m.state != stateChooseAction {
+		t.Fatalf("n on existing target should be ignored, state=%v", m.state)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if !strings.Contains(m.notice, "Migrated") {
+		t.Fatalf("notice = %q, want Migrated", m.notice)
+	}
+	copied, err := db.Open(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copied.Close()
+	if _, err := db.GetAllSettings(copied); err != nil {
+		t.Errorf("overwritten file is not a valid database: %v", err)
+	}
+}
+
+func TestExportFailsForExistingFile(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	dst := filepath.Join(t.TempDir(), "taken.db")
+	if err := os.WriteFile(dst, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m.editBuf = dst
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.state != stateList || !strings.Contains(m.notice, "Export failed") {
+		t.Errorf("state=%v notice=%q, want Export failed", m.state, m.notice)
+	}
+}

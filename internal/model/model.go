@@ -1,11 +1,10 @@
 // Package model holds the in-memory Task representation and its persistence
-// helpers, mirroring the original Rust model.rs.
+// helpers.
 package model
 
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/eveenendaal/last-run/internal/format"
@@ -71,33 +70,23 @@ func Select(db *sql.DB, id string) (*Task, error) {
 		return nil, err
 	}
 
-	task := &Task{ID: taskID}
-	if lastRun.Valid {
-		task.LastRun = format.ParseRFC3339Opt(lastRun.String)
-	}
-	if startTime.Valid {
-		task.StartTime = format.ParseRFC3339Opt(startTime.String)
-	}
-	return task, nil
+	return &Task{
+		ID:        taskID,
+		LastRun:   format.ParseRFC3339Opt(lastRun.String),
+		StartTime: format.ParseRFC3339Opt(startTime.String),
+	}, nil
 }
 
 // Ensure returns the existing task, or creates and inserts a new empty one if
-// it does not exist. Unless quiet, it prints a notice when creating.
-func Ensure(db *sql.DB, id string, quiet bool) (*Task, error) {
-	task, err := Select(db, id)
-	if err != nil {
-		return nil, err
+// it does not exist. created reports whether a new task was inserted.
+func Ensure(db *sql.DB, id string) (task *Task, created bool, err error) {
+	task, err = Select(db, id)
+	if err != nil || task != nil {
+		return task, false, err
 	}
-	if task != nil {
-		return task, nil
+	task = &Task{ID: id}
+	if err := task.Insert(db); err != nil {
+		return nil, false, err
 	}
-
-	if !quiet {
-		fmt.Printf("No record found for task ID: %s\n", id)
-	}
-	newTask := &Task{ID: id}
-	if err := newTask.Insert(db); err != nil {
-		return nil, err
-	}
-	return newTask, nil
+	return task, true, nil
 }
