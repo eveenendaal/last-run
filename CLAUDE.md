@@ -71,5 +71,6 @@ To add a target, add it to the `targets` list in the `build` job.
   `git describe` (or `dev`).
 - Dependabot is configured in `.github/dependabot.yml` (monthly Go modules +
   GitHub Actions updates, assigned to `eveenendaal`). PRs run
-  `.github/workflows/test.yml`; merges are reviewed manually.
+  `.github/workflows/test.yml`, whose `test` job is a required check on
+  `master` (set in terraform-base), so nothing merges before it passes.
 - Always run `make test` before committing.

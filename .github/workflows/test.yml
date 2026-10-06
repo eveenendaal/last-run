@@ -4,13 +4,8 @@ on:
   pull_request:
     branches:
       - 'master'
-    paths:
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '**/*.go'
-      - '.github/workflows/*.yml'
-      - '.github/actions/**/*.yml'
+    # No `paths:` filter: `test` is a required status check on master, so it
+    # has to report on every PR or a PR that skips it can never merge.
 
 jobs:
   test:
